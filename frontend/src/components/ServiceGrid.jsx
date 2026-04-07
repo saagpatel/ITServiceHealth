@@ -1,7 +1,7 @@
 import { CATEGORY_ORDER, STATUS_COLORS, STATUS_ICONS } from "../lib/constants";
 import ServiceTile from "./ServiceTile";
 
-export default function ServiceGrid({ services, slaData, selectedId, onSelect }) {
+export default function ServiceGrid({ services, slaData, onSelect }) {
   if (!services?.services) {
     return (
       <div className="space-y-6">

@@ -36,8 +36,8 @@ export default function Timeline({ data, loading }) {
         <p className="text-xs text-text-muted px-3 py-6 text-center">No status events recorded.</p>
       ) : (
         <div className="border-t border-border">
-          {clusters.map((cluster, i) => (
-            <ClusterGroup key={i} cluster={cluster} />
+          {clusters.map((cluster) => (
+            <ClusterGroup key={cluster.started_at} cluster={cluster} />
           ))}
         </div>
       )}

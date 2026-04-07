@@ -78,7 +78,6 @@ export default function App() {
         <ServiceGrid
           services={services.data}
           slaData={sla.data}
-          selectedId={selectedServiceId}
           onSelect={setSelectedServiceId}
         />
 

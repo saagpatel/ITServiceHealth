@@ -1,21 +1,35 @@
+import { useEffect, useRef } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 
 export default function ReloadPrompt() {
+  const intervalRef = useRef(null);
+
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     onRegisteredSW(_swUrl, registration) {
       if (registration) {
-        setInterval(() => {
+        // Clear any previous interval to prevent leaks on re-registration
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        intervalRef.current = setInterval(() => {
           registration.update();
         }, 5 * 60 * 1000);
       }
     },
     onRegisterError(error) {
-      console.error("SW registration error:", error);
+      if (import.meta.env.DEV) {
+        console.error("SW registration error:", error);
+      }
     },
   });
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
 
   if (!needRefresh) return null;
 
