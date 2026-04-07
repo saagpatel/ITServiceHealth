@@ -9,6 +9,7 @@ import Timeline from "./components/Timeline";
 import ServiceDetail from "./components/ServiceDetail";
 import DependencyGraph from "./components/DependencyGraph";
 import ErrorBanner from "./components/ErrorBanner";
+import ReloadPrompt from "./components/ReloadPrompt";
 
 export default function App() {
   const [selectedServiceId, setSelectedServiceId] = useState(null);
@@ -118,6 +119,9 @@ export default function App() {
           onClose={() => setSelectedServiceId(null)}
         />
       )}
+
+      {/* PWA Update Prompt */}
+      <ReloadPrompt />
     </div>
   );
 }
