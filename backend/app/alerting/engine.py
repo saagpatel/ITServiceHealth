@@ -89,15 +89,31 @@ async def process_changes(
             except Exception:
                 logger.exception("Failed to generate incident report for %s", change.service_id)
 
-        # Collect Slack alert data (suppress boot warmup: unknown→operational)
+        # Collect Slack alert data (suppress boot warmup and active maintenance windows)
         if not is_boot_warmup:
-            alert_data.append((
-                change.service_display_name,
-                change.previous_status,
-                change.new_status,
-                impact,
-                change.status_page_url,
-            ))
+            # Check for active maintenance — suppress alerts for services under maintenance
+            in_maintenance = False
+            try:
+                cursor = await db.execute(
+                    """SELECT 1 FROM scheduled_maintenances
+                       WHERE service_id = ? AND status IN ('in_progress', 'verifying')
+                       LIMIT 1""",
+                    (change.service_id,),
+                )
+                in_maintenance = await cursor.fetchone() is not None
+            except Exception:
+                logger.debug("Failed to check maintenance status for %s", change.service_id)
+
+            if in_maintenance:
+                logger.info("Suppressing alert for %s — active maintenance window", change.service_display_name)
+            else:
+                alert_data.append((
+                    change.service_display_name,
+                    change.previous_status,
+                    change.new_status,
+                    impact,
+                    change.status_page_url,
+                ))
 
     # Send Slack alerts
     if not alert_data or not settings.slack_webhook_url:

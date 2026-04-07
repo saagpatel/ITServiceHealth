@@ -32,7 +32,7 @@ export default function ServiceDetail({ serviceId, uptimeData, slaData, onClose 
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} role="button" aria-label="Close panel" tabIndex={-1} />
-      <div className="fixed top-0 right-0 h-full w-[480px] bg-bg-page border-l border-border z-50
+      <div className="fixed top-0 right-0 h-full w-full sm:w-[480px] bg-bg-page border-l border-border z-50
                       overflow-y-auto shadow-2xl animate-slide-in">
         <button
           onClick={onClose}

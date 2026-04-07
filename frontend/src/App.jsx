@@ -8,6 +8,7 @@ import ServiceGrid from "./components/ServiceGrid";
 import Timeline from "./components/Timeline";
 import ServiceDetail from "./components/ServiceDetail";
 import DependencyGraph from "./components/DependencyGraph";
+import ErrorBanner from "./components/ErrorBanner";
 
 export default function App() {
   const [selectedServiceId, setSelectedServiceId] = useState(null);
@@ -32,7 +33,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-bg-page text-text-primary">
-      <div className="max-w-5xl mx-auto px-8 py-8 space-y-5">
+      <div className="max-w-5xl mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -58,6 +59,13 @@ export default function App() {
             </span>
           </div>
         </div>
+
+        {/* Error Banner */}
+        <ErrorBanner polls={[
+          { ...summary, label: "summary" },
+          { ...services, label: "services" },
+          { ...timeline, label: "timeline" },
+        ]} />
 
         {/* Status Banner */}
         <StatusBanner data={summary.data} loading={summary.loading} />
