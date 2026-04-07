@@ -134,6 +134,47 @@ def build_batch_slack_alert(
     }
 
 
+def build_cascade_recovery_alert(
+    upstream_name: str,
+    downstream_names: list[str],
+) -> dict:
+    """Build a Slack message for a cascade recovery (upstream + multiple downstream)."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    count = len(downstream_names)
+    downstream_list = ", ".join(downstream_names)
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"\u2705 {upstream_name} Recovered \u2014 {count} Downstream Restored",
+                "emoji": True,
+            },
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"*{upstream_name}* has recovered and is now operational.\n\n"
+                    f"*Restored downstream services ({count}):*\n{downstream_list}"
+                ),
+            },
+        },
+        {"type": "divider"},
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"IT Service Health Dashboard \u2022 {now}"}],
+        },
+    ]
+
+    return {
+        "text": f"\u2705 {upstream_name} recovered \u2014 {count} downstream services restored",
+        "blocks": blocks,
+    }
+
+
 async def send_slack_alert(
     webhook_url: str,
     payload: dict,
