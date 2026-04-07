@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
     seed_demo_data: bool = False
+    backup_dir: str = "backups"
+    backup_time_hour: int = 2  # UTC hour for daily backup
+    backup_retention_days: int = 7
 
     @property
     def services_yaml_path(self) -> Path:
