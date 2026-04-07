@@ -4,6 +4,7 @@ import { POLL_INTERVAL_MS, UPTIME_POLL_INTERVAL_MS, SEVERITY_COLORS, STATUS_COLO
 import { timeAgo, formatTimestamp, humanStatus } from "../lib/format";
 import StatusIndicator from "./StatusIndicator";
 import UptimeBar from "./UptimeBar";
+import SlaChart from "./SlaChart";
 
 export default function ServiceDetail({ serviceId, uptimeData, slaData, onClose }) {
   const { data, loading } = usePolling(
@@ -13,6 +14,11 @@ export default function ServiceDetail({ serviceId, uptimeData, slaData, onClose 
 
   const reports = usePolling(
     serviceId ? `/api/reports?service_id=${serviceId}` : null,
+    UPTIME_POLL_INTERVAL_MS
+  );
+
+  const slaHistory = usePolling(
+    serviceId ? "/api/services/sla/history?days=30" : null,
     UPTIME_POLL_INTERVAL_MS
   );
 
@@ -65,10 +71,11 @@ export default function ServiceDetail({ serviceId, uptimeData, slaData, onClose 
               </div>
             </div>
 
-            {/* SLA / Uptime Percentages */}
+            {/* SLA / Uptime Percentages + Trend Chart */}
             {serviceSla && (
               <Section title="Uptime SLA">
-                <div className="grid grid-cols-3 gap-3">
+                <SlaChart dataPoints={slaHistory.data?.services?.[serviceId] || []} />
+                <div className="grid grid-cols-3 gap-3 mt-3">
                   <SlaCard label="24h" value={serviceSla.uptime_24h} />
                   <SlaCard label="7d" value={serviceSla.uptime_7d} />
                   <SlaCard label="30d" value={serviceSla.uptime_30d} />
