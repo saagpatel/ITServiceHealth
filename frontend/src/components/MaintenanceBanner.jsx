@@ -11,32 +11,33 @@ export default function MaintenanceBanner({ data }) {
   const remaining = maintenances.length - 3;
 
   return (
-    <div className="bg-amber-950/50 border-b border-amber-900/30 px-4 py-2">
-      <div className="flex items-center gap-2 mb-1">
-        <svg className="w-3.5 h-3.5 text-status-degraded shrink-0" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+    <div className="rounded-lg bg-bg-surface border border-border px-4 py-3">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 w-full text-left cursor-pointer"
+      >
+        <span className="text-xs">🔧</span>
+        <span className="text-xs font-medium text-text-secondary">
+          {maintenances.length} scheduled maintenance{maintenances.length !== 1 ? "s" : ""}
+        </span>
+        <svg
+          className={`w-3 h-3 text-text-muted ml-auto transition-transform ${expanded ? "rotate-180" : ""}`}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
-        <span className="text-xs font-medium text-status-degraded">Scheduled Maintenance</span>
-      </div>
-      <div className="space-y-0.5">
-        {visible.map((m) => (
-          <div key={m.id} className="text-xs text-text-muted">
-            <span className="text-text-secondary">{m.service_name}</span>
-            {" — "}
-            {m.title}
-            {" — "}
-            <span className="text-text-muted">{formatTimestamp(m.scheduled_for)}</span>
-          </div>
-        ))}
-        {!expanded && remaining > 0 && (
-          <button
-            onClick={() => setExpanded(true)}
-            className="text-xs text-accent hover:underline cursor-pointer"
-          >
-            +{remaining} more
-          </button>
-        )}
-      </div>
+      </button>
+      {expanded && (
+        <div className="mt-2 space-y-1 border-t border-border pt-2">
+          {visible.map((m) => (
+            <div key={m.id} className="text-xs text-text-muted flex gap-2">
+              <span className="text-text-secondary font-medium shrink-0">{m.service_name}</span>
+              <span className="truncate">{m.title}</span>
+              <span className="shrink-0 ml-auto">{formatTimestamp(m.scheduled_for)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

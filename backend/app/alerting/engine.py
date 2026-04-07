@@ -75,11 +75,21 @@ async def process_changes(
         except Exception:
             logger.exception("Failed to write impact_statement for %s", change.service_id)
 
-        # Collect Slack alert data (suppress boot warmup: unknown→operational)
+        # Generate incident report on recovery (non-boot)
         is_boot_warmup = (
             change.previous_status == "unknown"
             and change.new_status == "operational"
         )
+        if change.new_status == "operational" and not is_boot_warmup:
+            try:
+                from app.reports import generate_incident_report
+                from datetime import datetime, timezone
+                resolved_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                await generate_incident_report(db, write_lock, change.service_id, resolved_at)
+            except Exception:
+                logger.exception("Failed to generate incident report for %s", change.service_id)
+
+        # Collect Slack alert data (suppress boot warmup: unknown→operational)
         if not is_boot_warmup:
             alert_data.append((
                 change.service_display_name,

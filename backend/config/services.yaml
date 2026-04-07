@@ -90,7 +90,8 @@ services:
   - id: ringcentral
     display_name: RingCentral
     category: collaboration
-    poll_type: manual  # custom JSON at status.ringcentral.com/status.json — needs custom poller (Phase 1)
+    poll_type: ringcentral_api
+    poll_url: https://status.ringcentral.com/status.json
     status_page_url: https://status.ringcentral.com
 
   # ── Engineering ───────────────────────────────────────────────────
@@ -177,14 +178,9 @@ services:
   - id: salesforce
     display_name: Salesforce
     category: sales
-    poll_type: manual  # Salesforce Trust API at api.status.salesforce.com/v1/ — needs custom poller (Phase 1)
+    poll_type: salesforce_trust
+    poll_url: https://api.status.salesforce.com/v1/incidents
     status_page_url: https://status.salesforce.com
-
-  - id: partnerportal
-    display_name: Partner Portal
-    category: sales
-    poll_type: manual  # hosted on Salesforce instance
-    status_page_url: null
 
   # ── Marketing ────────────────────────────────────────────────────
   - id: iterable
@@ -200,23 +196,11 @@ services:
     poll_type: manual  # status.adobe.com requires Adobe I/O credentials — no public API
     status_page_url: https://status.adobe.com
 
-  # ── Network & VPN ────────────────────────────────────────────────
-  - id: juniper-vpn
-    display_name: Juniper VPN
-    category: networking
-    poll_type: manual
-    status_page_url: null
-
   # ── Support ──────────────────────────────────────────────────────
   - id: zendesk
     display_name: Zendesk
     category: support
-    poll_type: manual  # custom API at status.zendesk.com/api/incidents/active — needs custom poller (Phase 1)
+    poll_type: zendesk_api
+    poll_url: https://status.zendesk.com/api/incidents/active
     status_page_url: https://status.zendesk.com
 
-  # ── Other ────────────────────────────────────────────────────────
-  - id: lithium
-    display_name: Lithium
-    category: support
-    poll_type: manual
-    status_page_url: null

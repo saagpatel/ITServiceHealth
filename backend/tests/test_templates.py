@@ -76,11 +76,11 @@ class TestGenerateImpactStatement:
         result = generate_impact_statement(change, downstream)
         assert "SSO authentication is unavailable" in result
 
-    def test_vpn_outage(self):
-        change = _make_change(service_id="juniper-vpn", display_name="Juniper VPN", new="major_outage")
+    def test_generic_major_outage_service(self):
+        change = _make_change(service_id="some-service", display_name="Some Service", new="major_outage")
         result = generate_impact_statement(change, [])
-        assert "VPN" in result
-        assert "Remote users" in result
+        assert "Some Service" in result
+        assert "MAJOR OUTAGE" in result
 
     def test_empty_vendor_detail(self):
         change = _make_change(new="degraded", detail=None)

@@ -47,7 +47,7 @@ export function usePolling(url, intervalMs = 30000) {
     fetchData(controller.signal);
 
     const interval = setInterval(() => {
-      fetchData();
+      fetchData(controller.signal);
     }, intervalMs);
 
     return () => {

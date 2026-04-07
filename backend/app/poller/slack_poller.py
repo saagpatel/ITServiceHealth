@@ -41,12 +41,16 @@ async def poll_slack(
         logger.warning("Unexpected error polling Slack status: %s", e)
         return PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e))
 
+    if not isinstance(data, dict):
+        logger.warning("Slack API returned non-dict response: %s", type(data).__name__)
+        return PollResult(status=ServiceStatus.UNKNOWN, status_detail="Unexpected response format")
+
     status = normalize_slack_status(data)
 
     # Extract detail from first active incident title
     status_detail = None
     active = data.get("active_incidents", [])
-    if active:
+    if active and isinstance(active[0], dict):
         status_detail = active[0].get("title")
 
     return PollResult(

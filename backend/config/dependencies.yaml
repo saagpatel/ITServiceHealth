@@ -58,15 +58,3 @@ dependencies:
       impact: "Calendar notifications and email invites may be delayed"
       severity: medium
 
-  # Sales & CRM
-  salesforce:
-    - service: partnerportal
-      impact: "Partner Portal is hosted on Salesforce — full outage expected"
-      severity: critical
-
-  # Network — VPN affects all internal services
-  # Special marker: "all_internal" is expanded by the seeder to all service IDs
-  juniper-vpn:
-    - service: all_internal
-      impact: "VPN outage affects remote access to all internal services"
-      severity: critical

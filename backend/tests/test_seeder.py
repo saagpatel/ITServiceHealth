@@ -64,7 +64,7 @@ class TestServiceConfig:
 class TestLoadServices:
     def test_loads_all_services(self):
         services = load_services()
-        assert len(services) >= 28
+        assert len(services) >= 25
 
     def test_service_types(self):
         services = load_services()
@@ -98,10 +98,9 @@ class TestLoadDependencies:
         assert "box" in okta_targets
         assert "slack" in okta_targets
 
-    def test_vpn_all_internal(self):
+    def test_okta_downstream_count(self):
         deps = load_dependencies()
-        vpn_targets = [t.service for t in deps["juniper-vpn"]]
-        assert "all_internal" in vpn_targets
+        assert len(deps["okta"]) >= 10
 
 
 class TestSeedDatabase:
@@ -130,13 +129,13 @@ class TestSeedDatabase:
         deps = load_dependencies()
         all_ids = [s.id for s in services]
         count = await seed_deps_with_db(db, deps, all_ids)
-        assert count > 15
+        assert count >= 14
 
         cursor = await db.execute("SELECT count(*) FROM service_dependencies")
         row = await cursor.fetchone()
-        assert row[0] > 15
+        assert row[0] >= 14
 
-    async def test_vpn_expands_all_internal(self, db):
+    async def test_okta_deps_seeded(self, db):
         services = load_services()
         await seed_services_with_db(db, services)
 
@@ -145,11 +144,10 @@ class TestSeedDatabase:
         await seed_deps_with_db(db, deps, all_ids)
 
         cursor = await db.execute(
-            "SELECT count(*) FROM service_dependencies WHERE upstream_service_id='juniper-vpn'"
+            "SELECT count(*) FROM service_dependencies WHERE upstream_service_id='okta'"
         )
         row = await cursor.fetchone()
-        # Should be all services minus juniper-vpn itself
-        assert row[0] == len(services) - 1
+        assert row[0] == 12
 
 
 # Helper functions that operate on a given db connection instead of the global one

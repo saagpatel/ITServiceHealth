@@ -66,6 +66,9 @@ async def run_poll_cycle(app) -> None:
         from app.poller.statuspage_poller import poll_all_statuspage
         from app.poller.slack_poller import poll_slack
         from app.poller.google_poller import poll_google
+        from app.poller.salesforce_poller import poll_salesforce
+        from app.poller.zendesk_poller import poll_zendesk
+        from app.poller.ringcentral_poller import poll_ringcentral
 
         tasks = []
         task_labels = []
@@ -91,6 +94,19 @@ async def run_poll_cycle(app) -> None:
             url = google_svcs[0]["poll_url"]
             tasks.append(poll_google(client, url, google_svcs))
             task_labels.append(f"google ({len(google_svcs)} services)")
+
+        # Single-service custom pollers
+        for poll_type, poller_fn in [
+            ("salesforce_trust", poll_salesforce),
+            ("zendesk_api", poll_zendesk),
+            ("ringcentral_api", poll_ringcentral),
+        ]:
+            for svc in services_by_type.get(poll_type, []):
+                async def _poll_single(s=svc, fn=poller_fn):
+                    result = await fn(client, s["poll_url"])
+                    return [(s["id"], result)]
+                tasks.append(_poll_single())
+                task_labels.append(f"{poll_type} ({svc['id']})")
 
         if not tasks:
             logger.warning("No pollable services found")

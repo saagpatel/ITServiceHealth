@@ -21,6 +21,7 @@ VALID_CATEGORIES = Literal[
 
 VALID_POLL_TYPES = Literal[
     "statuspage_json", "google_json", "slack_api", "rss", "manual",
+    "salesforce_trust", "zendesk_api", "ringcentral_api",
 ]
 
 

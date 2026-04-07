@@ -32,7 +32,6 @@ class TestGetDownstream:
     async def test_downstream_ordered_by_severity(self, seeded_db):
         results = await get_downstream(seeded_db, "okta")
         severities = [r["severity"] for r in results]
-        # Critical should come before high, high before medium
         first_critical = next(i for i, s in enumerate(severities) if s == "critical")
         last_critical = len(severities) - 1 - next(
             i for i, s in enumerate(reversed(severities)) if s == "critical"
@@ -46,12 +45,8 @@ class TestGetDownstream:
             assert "current_status" in r
             assert r["current_status"] is not None
 
-    async def test_vpn_has_28_downstream(self, seeded_db):
-        results = await get_downstream(seeded_db, "juniper-vpn")
-        assert len(results) == 28  # all services minus itself
-
     async def test_no_downstream(self, seeded_db):
-        results = await get_downstream(seeded_db, "lithium")
+        results = await get_downstream(seeded_db, "coupa")
         assert results == []
 
     async def test_nonexistent_service(self, seeded_db):
@@ -60,11 +55,10 @@ class TestGetDownstream:
 
 
 class TestGetUpstream:
-    async def test_box_upstream_includes_okta_and_vpn(self, seeded_db):
+    async def test_box_upstream_includes_okta(self, seeded_db):
         results = await get_upstream(seeded_db, "box")
         ids = [r["service_id"] for r in results]
         assert "okta" in ids
-        assert "juniper-vpn" in ids
 
     async def test_okta_upstream_includes_duo(self, seeded_db):
         results = await get_upstream(seeded_db, "okta")
@@ -72,8 +66,5 @@ class TestGetUpstream:
         assert "duo" in ids
 
     async def test_no_upstream(self, seeded_db):
-        # Duo has no upstream dependencies
         results = await get_upstream(seeded_db, "duo")
-        # Only juniper-vpn (via all_internal expansion)
-        ids = [r["service_id"] for r in results]
-        assert "juniper-vpn" in ids
+        assert results == []

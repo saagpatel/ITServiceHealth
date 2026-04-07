@@ -77,7 +77,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Accept"],
 )
 
 # Register routers
@@ -85,11 +85,13 @@ from app.router_admin import router as admin_router  # noqa: E402
 from app.router_services import router as services_router  # noqa: E402
 from app.router_timeline import router as timeline_router  # noqa: E402
 from app.router_summary import router as summary_router  # noqa: E402
+from app.router_reports import router as reports_router  # noqa: E402
 
 app.include_router(admin_router)
 app.include_router(services_router)
 app.include_router(timeline_router)
 app.include_router(summary_router)
+app.include_router(reports_router)
 
 
 @app.get("/api/health")
@@ -137,8 +139,8 @@ async def health() -> dict:
                     health_status = "unhealthy"
                 elif poll_age_seconds > 120:
                     health_status = "degraded"
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as e:
+                logger.warning("Failed to parse last_poll_at timestamp: %s", e)
 
     except Exception as e:
         logger.error("Health check failed: %s", e)
@@ -165,7 +167,8 @@ if FRONTEND_DIR.exists():
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         """SPA catch-all: serve index.html for all non-API routes."""
-        file_path = FRONTEND_DIR / full_path
-        if file_path.is_file():
+        file_path = (FRONTEND_DIR / full_path).resolve()
+        # Prevent path traversal: ensure resolved path is within FRONTEND_DIR
+        if file_path.is_file() and str(file_path).startswith(str(FRONTEND_DIR.resolve())):
             return FileResponse(file_path)
         return FileResponse(FRONTEND_DIR / "index.html")

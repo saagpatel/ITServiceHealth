@@ -31,11 +31,6 @@ TEMPLATES = {
         "Users cannot log into: {downstream_list}. "
         "Advise users with active sessions to avoid logging out."
     ),
-    "vpn_outage": (
-        "\u26a0\ufe0f VPN (Juniper) is experiencing an outage. "
-        "Remote users cannot access internal services. "
-        "On-site users are not affected."
-    ),
     "recovery": (
         "{service_name} has recovered and is now operational."
     ),
@@ -63,18 +58,14 @@ def generate_impact_statement(
 
     # Recovery
     if change.new_status == "operational":
-        return TEMPLATES["recovery"].format(service_name=change.service_display_name)
+        return TEMPLATES["recovery"].replace("{service_name}", change.service_display_name)
 
     # Special case: Okta
     if change.service_id == "okta":
         if change.new_status in ("major_outage", "partial_outage"):
-            return TEMPLATES["okta_outage"].format(downstream_list=downstream_list)
+            return TEMPLATES["okta_outage"].replace("{downstream_list}", downstream_list)
         if change.new_status == "degraded":
-            return TEMPLATES["okta_degraded"].format(downstream_list=downstream_list)
-
-    # Special case: VPN
-    if change.service_id == "juniper-vpn":
-        return TEMPLATES["vpn_outage"]
+            return TEMPLATES["okta_degraded"].replace("{downstream_list}", downstream_list)
 
     # Generic path: pick template by severity
     template_key = {
@@ -83,15 +74,18 @@ def generate_impact_statement(
         "major_outage": "single_service_major",
     }.get(change.new_status, "single_service_degraded")
 
-    statement = TEMPLATES[template_key].format(
-        service_name=change.service_display_name,
-        vendor_detail=vendor_detail,
-    ).rstrip()
+    # Use replace instead of .format() to avoid KeyError from vendor details with curly braces
+    statement = TEMPLATES[template_key]
+    statement = statement.replace("{service_name}", change.service_display_name)
+    statement = statement.replace("{vendor_detail}", vendor_detail)
+    statement = statement.rstrip()
 
     # Append downstream impacts if any
     if downstream_names:
-        statement += TEMPLATES["with_downstream"].format(
-            downstream_list=downstream_list,
+        if statement and not statement.endswith((".", "!", "?")):
+            statement += "."
+        statement += TEMPLATES["with_downstream"].replace(
+            "{downstream_list}", downstream_list,
         )
 
     return statement

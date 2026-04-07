@@ -50,6 +50,9 @@ def normalize_slack_status(response: dict) -> ServiceStatus:
     When status is "ok" and no active incidents → OPERATIONAL.
     Otherwise, map by incident type.
     """
+    if not isinstance(response, dict):
+        return ServiceStatus.UNKNOWN
+
     status = response.get("status", "")
     active_incidents = response.get("active_incidents", [])
 
@@ -62,16 +65,22 @@ def normalize_slack_status(response: dict) -> ServiceStatus:
 
     # Check incident types from most severe to least
     for incident in active_incidents:
+        if not isinstance(incident, dict):
+            continue
         incident_type = incident.get("type", "")
         if incident_type == "outage":
             return ServiceStatus.MAJOR_OUTAGE
 
     for incident in active_incidents:
+        if not isinstance(incident, dict):
+            continue
         incident_type = incident.get("type", "")
         if incident_type == "incident":
             return ServiceStatus.PARTIAL_OUTAGE
 
     for incident in active_incidents:
+        if not isinstance(incident, dict):
+            continue
         incident_type = incident.get("type", "")
         if incident_type in ("notice", "maintenance"):
             return ServiceStatus.DEGRADED

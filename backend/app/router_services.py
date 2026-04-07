@@ -1,5 +1,7 @@
 """Service API routes: list all services, get service detail with dependencies."""
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, HTTPException
 
 from app.database import get_db
@@ -45,6 +47,137 @@ async def list_services(category: str | None = None) -> dict:
         },
         "error": None,
         "meta": {"category_filter": category},
+    }
+
+
+@router.get("/services/uptime")
+async def get_services_uptime() -> dict:
+    """Get per-service, per-day worst status over the past 7 days."""
+    db = await get_db()
+
+    # Generate the last 7 days
+    now = datetime.now(timezone.utc)
+    days = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
+
+    cursor = await db.execute(
+        """SELECT service_id,
+                  DATE(created_at) as day,
+                  CASE MAX(CASE new_status
+                      WHEN 'major_outage' THEN 4
+                      WHEN 'partial_outage' THEN 3
+                      WHEN 'degraded' THEN 2
+                      ELSE 1 END)
+                  WHEN 4 THEN 'major_outage'
+                  WHEN 3 THEN 'partial_outage'
+                  WHEN 2 THEN 'degraded'
+                  ELSE 'operational' END as worst_status
+           FROM status_events
+           WHERE created_at >= datetime('now', '-7 days')
+             AND NOT (previous_status = 'unknown' AND new_status = 'operational')
+           GROUP BY service_id, DATE(created_at)"""
+    )
+    rows = await cursor.fetchall()
+
+    services: dict[str, dict[str, str]] = {}
+    for row in rows:
+        sid = row[0]
+        if sid not in services:
+            services[sid] = {}
+        services[sid][row[1]] = row[2]
+
+    return {
+        "data": {"days": days, "services": services},
+        "error": None,
+        "meta": None,
+    }
+
+
+@router.get("/services/sla")
+async def get_services_sla() -> dict:
+    """Get per-service uptime percentages for 24h, 7d, and 30d windows."""
+    db = await get_db()
+
+    results: dict[str, dict[str, float | None]] = {}
+
+    for window_label, window_days in [("uptime_24h", 1), ("uptime_7d", 7), ("uptime_30d", 30)]:
+        cursor = await db.execute(
+            """WITH intervals AS (
+                SELECT service_id, new_status as status,
+                       created_at as started,
+                       LEAD(created_at) OVER (PARTITION BY service_id ORDER BY created_at) as ended
+                FROM status_events
+                WHERE created_at >= datetime('now', ? || ' days')
+                  AND NOT (previous_status = 'unknown' AND new_status = 'operational')
+               )
+               SELECT service_id,
+                      SUM(CASE WHEN status = 'operational'
+                          THEN (julianday(COALESCE(ended, datetime('now'))) - julianday(started)) * 86400
+                          ELSE 0 END) as operational_seconds,
+                      SUM(CASE WHEN status != 'unknown'
+                          THEN (julianday(COALESCE(ended, datetime('now'))) - julianday(started)) * 86400
+                          ELSE 0 END) as tracked_seconds
+               FROM intervals
+               WHERE status != 'unknown'
+               GROUP BY service_id""",
+            (f"-{window_days}",),
+        )
+        rows = await cursor.fetchall()
+
+        for row in rows:
+            sid = row[0]
+            operational = row[1] or 0
+            tracked = row[2] or 0
+
+            if sid not in results:
+                results[sid] = {"uptime_24h": None, "uptime_7d": None, "uptime_30d": None}
+
+            if tracked > 0:
+                pct = round((operational / tracked) * 100, 2)
+                results[sid][window_label] = min(pct, 100.0)
+
+    return {
+        "data": {"services": results},
+        "error": None,
+        "meta": None,
+    }
+
+
+@router.get("/services/graph")
+async def get_service_graph() -> dict:
+    """Get service dependency graph in node/link format for visualization."""
+    db = await get_db()
+
+    # Nodes: all services with current status and downstream count
+    cursor = await db.execute(
+        """SELECT s.id, s.display_name, s.category, s.current_status,
+                  (SELECT COUNT(*) FROM service_dependencies WHERE upstream_service_id = s.id) as downstream_count
+           FROM services s ORDER BY s.display_name"""
+    )
+    nodes = [
+        {
+            "id": row[0],
+            "name": row[1],
+            "category": row[2],
+            "status": row[3],
+            "downstream_count": row[4],
+        }
+        for row in await cursor.fetchall()
+    ]
+
+    # Links: all dependencies
+    cursor = await db.execute(
+        """SELECT sd.upstream_service_id as source,
+                  sd.downstream_service_id as target,
+                  sd.severity,
+                  sd.impact_description as impact
+           FROM service_dependencies sd"""
+    )
+    links = [dict(row) for row in await cursor.fetchall()]
+
+    return {
+        "data": {"nodes": nodes, "links": links},
+        "error": None,
+        "meta": None,
     }
 
 
