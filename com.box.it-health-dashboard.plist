@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.box.it-health-dashboard</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- UPDATE: Replace with actual path to project venv on Mac Mini -->
+        <string>/path/to/ITServiceHealth/.venv/bin/python3</string>
+        <string>-m</string>
+        <string>uvicorn</string>
+        <string>app.main:app</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8000</string>
+        <string>--workers</string>
+        <string>2</string>
+        <string>--log-level</string>
+        <string>warning</string>
+        <string>--timeout-graceful-shutdown</string>
+        <string>30</string>
+    </array>
+
+    <!-- UPDATE: Replace with actual path to backend/ directory on Mac Mini -->
+    <key>WorkingDirectory</key>
+    <string>/path/to/ITServiceHealth/backend</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/it-health-dashboard.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/it-health-dashboard.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <!-- UPDATE: Add your Slack webhook URL -->
+        <key>SLACK_WEBHOOK_URL</key>
+        <string></string>
+        <key>DATABASE_PATH</key>
+        <string>./data.db</string>
+    </dict>
+</dict>
+</plist>

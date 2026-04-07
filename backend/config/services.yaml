@@ -1,0 +1,222 @@
+# IT Service Health Dashboard — Service Registry
+# All poll_urls verified via curl on 2026-04-07
+# Services with no public JSON API are set to poll_type: manual
+
+categories:
+  identity: "Identity & Access"
+  productivity: "Productivity"
+  collaboration: "Collaboration"
+  engineering: "Engineering"
+  hr: "HR & People"
+  finance: "Finance"
+  sales: "Sales & CRM"
+  marketing: "Marketing"
+  networking: "Network & VPN"
+  support: "Support"
+
+services:
+  # ── Identity & Access ─────────────────────────────────────────────
+  - id: okta
+    display_name: Okta
+    category: identity
+    poll_type: manual  # status.okta.com returns 401 — requires Salesforce login, no public API
+    status_page_url: https://status.okta.com
+
+  - id: duo
+    display_name: Duo Security
+    category: identity
+    poll_type: statuspage_json
+    poll_url: https://status.duo.com/api/v2/summary.json
+    status_page_url: https://status.duo.com
+
+  # ── Productivity ──────────────────────────────────────────────────
+  - id: box
+    display_name: Box
+    category: productivity
+    poll_type: statuspage_json
+    poll_url: https://status.box.com/api/v2/summary.json
+    status_page_url: https://status.box.com
+
+  - id: docusign
+    display_name: DocuSign
+    category: productivity
+    poll_type: statuspage_json
+    poll_url: https://status.docusign.com/api/v2/summary.json
+    status_page_url: https://status.docusign.com
+
+  - id: google-mail
+    display_name: Google Mail
+    category: productivity
+    poll_type: google_json
+    poll_url: https://www.google.com/appsstatus/dashboard/incidents.json
+    status_page_url: https://www.google.com/appsstatus/dashboard
+
+  - id: google-calendar
+    display_name: Google Calendar
+    category: productivity
+    poll_type: google_json
+    poll_url: https://www.google.com/appsstatus/dashboard/incidents.json
+    status_page_url: https://www.google.com/appsstatus/dashboard
+
+  - id: conga
+    display_name: Conga
+    category: productivity
+    poll_type: statuspage_json
+    poll_url: https://status.conga.com/api/v2/summary.json
+    status_page_url: https://status.conga.com
+
+  - id: eptura
+    display_name: Eptura (Teem)
+    category: productivity
+    poll_type: statuspage_json
+    poll_url: https://status.eptura.com/api/v2/summary.json
+    status_page_url: https://status.eptura.com
+
+  # ── Collaboration ─────────────────────────────────────────────────
+  - id: slack
+    display_name: Slack
+    category: collaboration
+    poll_type: slack_api
+    poll_url: https://slack-status.com/api/v2.0.0/current
+    status_page_url: https://status.slack.com
+
+  - id: zoom
+    display_name: Zoom
+    category: collaboration
+    poll_type: statuspage_json
+    poll_url: https://status.zoom.us/api/v2/summary.json  # returns 302 — httpx needs follow_redirects=True
+    status_page_url: https://status.zoom.us
+
+  - id: ringcentral
+    display_name: RingCentral
+    category: collaboration
+    poll_type: manual  # custom JSON at status.ringcentral.com/status.json — needs custom poller (Phase 1)
+    status_page_url: https://status.ringcentral.com
+
+  # ── Engineering ───────────────────────────────────────────────────
+  - id: confluence
+    display_name: Confluence
+    category: engineering
+    poll_type: statuspage_json  # page-level status — components hidden when healthy
+    poll_url: https://status.atlassian.com/api/v2/summary.json
+    statuspage_component_name: Confluence
+    status_page_url: https://status.atlassian.com
+
+  - id: jira
+    display_name: Jira
+    category: engineering
+    poll_type: statuspage_json  # page-level status — components hidden when healthy
+    poll_url: https://status.atlassian.com/api/v2/summary.json
+    statuspage_component_name: Jira
+    status_page_url: https://status.atlassian.com
+
+  - id: servicedesk
+    display_name: Jira Service Management
+    category: engineering
+    poll_type: statuspage_json  # page-level status — components hidden when healthy
+    poll_url: https://status.atlassian.com/api/v2/summary.json
+    statuspage_component_name: Jira Service Management
+    status_page_url: https://status.atlassian.com
+
+  - id: snaplogic
+    display_name: SnapLogic
+    category: engineering
+    poll_type: statuspage_json
+    poll_url: https://trust.snaplogic.com/api/v2/summary.json  # corrected: trust.snaplogic.com, not status.snaplogic.com
+    status_page_url: https://trust.snaplogic.com
+
+  # ── HR & People ──────────────────────────────────────────────────
+  - id: greenhouse
+    display_name: Greenhouse
+    category: hr
+    poll_type: statuspage_json
+    poll_url: https://status.greenhouse.io/api/v2/summary.json
+    status_page_url: https://status.greenhouse.io
+
+  - id: workday
+    display_name: Workday
+    category: hr
+    poll_type: manual  # trust site requires Workday Community login — no public API
+    status_page_url: https://community.workday.com/trust/status
+
+  - id: cornerstone
+    display_name: Cornerstone OnDemand
+    category: hr
+    poll_type: statuspage_json
+    poll_url: https://status.csod.com/api/v2/summary.json
+    status_page_url: https://status.csod.com
+
+  # ── Finance ──────────────────────────────────────────────────────
+  - id: concur
+    display_name: SAP Concur
+    category: finance
+    poll_type: manual  # open.concur.com is a React SPA — no JSON API
+    status_page_url: https://open.concur.com
+
+  - id: coupa
+    display_name: Coupa
+    category: finance
+    poll_type: manual
+    status_page_url: null
+
+  - id: netsuite
+    display_name: NetSuite
+    category: finance
+    poll_type: statuspage_json
+    poll_url: https://status.netsuite.com/api/v2/summary.json
+    status_page_url: https://status.netsuite.com
+
+  - id: zuora
+    display_name: Zuora
+    category: finance
+    poll_type: statuspage_json
+    poll_url: https://trust.zuora.com/api/v2/summary.json  # corrected: trust.zuora.com, not status.zuora.com
+    status_page_url: https://trust.zuora.com
+
+  # ── Sales & CRM ─────────────────────────────────────────────────
+  - id: salesforce
+    display_name: Salesforce
+    category: sales
+    poll_type: manual  # Salesforce Trust API at api.status.salesforce.com/v1/ — needs custom poller (Phase 1)
+    status_page_url: https://status.salesforce.com
+
+  - id: partnerportal
+    display_name: Partner Portal
+    category: sales
+    poll_type: manual  # hosted on Salesforce instance
+    status_page_url: null
+
+  # ── Marketing ────────────────────────────────────────────────────
+  - id: iterable
+    display_name: Iterable
+    category: marketing
+    poll_type: statuspage_json
+    poll_url: https://status.iterable.com/api/v2/summary.json
+    status_page_url: https://status.iterable.com
+
+  - id: marketo
+    display_name: Marketo (Adobe)
+    category: marketing
+    poll_type: manual  # status.adobe.com requires Adobe I/O credentials — no public API
+    status_page_url: https://status.adobe.com
+
+  # ── Network & VPN ────────────────────────────────────────────────
+  - id: juniper-vpn
+    display_name: Juniper VPN
+    category: networking
+    poll_type: manual
+    status_page_url: null
+
+  # ── Support ──────────────────────────────────────────────────────
+  - id: zendesk
+    display_name: Zendesk
+    category: support
+    poll_type: manual  # custom API at status.zendesk.com/api/incidents/active — needs custom poller (Phase 1)
+    status_page_url: https://status.zendesk.com
+
+  # ── Other ────────────────────────────────────────────────────────
+  - id: lithium
+    display_name: Lithium
+    category: support
+    poll_type: manual
+    status_page_url: null

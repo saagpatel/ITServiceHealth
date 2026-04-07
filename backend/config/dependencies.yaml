@@ -1,0 +1,72 @@
+# IT Service Health Dashboard — Service Dependency Graph
+# Format: upstream → downstream (when upstream breaks, downstream is impacted)
+
+dependencies:
+  # Identity & Access — highest blast radius
+  okta:
+    - service: box
+      impact: "Box SSO login unavailable"
+      severity: critical
+    - service: slack
+      impact: "Slack SSO login may fail for new sessions"
+      severity: critical
+    - service: zoom
+      impact: "Zoom SSO login unavailable"
+      severity: critical
+    - service: salesforce
+      impact: "Salesforce SSO login unavailable"
+      severity: critical
+    - service: jira
+      impact: "Jira SSO login unavailable"
+      severity: high
+    - service: confluence
+      impact: "Confluence SSO login unavailable"
+      severity: high
+    - service: concur
+      impact: "Concur SSO login unavailable"
+      severity: high
+    - service: workday
+      impact: "Workday SSO login unavailable"
+      severity: high
+    - service: greenhouse
+      impact: "Greenhouse SSO login unavailable"
+      severity: medium
+    - service: docusign
+      impact: "DocuSign SSO login unavailable"
+      severity: medium
+    - service: zendesk
+      impact: "Zendesk SSO login unavailable"
+      severity: medium
+    - service: netsuite
+      impact: "NetSuite SSO login unavailable"
+      severity: medium
+
+  duo:
+    - service: okta
+      impact: "MFA push notifications unavailable; Okta login may require fallback methods"
+      severity: critical
+
+  # Collaboration dependencies
+  slack:
+    - service: servicedesk
+      impact: "Slack-based IT support channel and Aisera bot unavailable"
+      severity: high
+
+  # Google Workspace
+  google-mail:
+    - service: google-calendar
+      impact: "Calendar notifications and email invites may be delayed"
+      severity: medium
+
+  # Sales & CRM
+  salesforce:
+    - service: partnerportal
+      impact: "Partner Portal is hosted on Salesforce — full outage expected"
+      severity: critical
+
+  # Network — VPN affects all internal services
+  # Special marker: "all_internal" is expanded by the seeder to all service IDs
+  juniper-vpn:
+    - service: all_internal
+      impact: "VPN outage affects remote access to all internal services"
+      severity: critical
