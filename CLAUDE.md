@@ -11,7 +11,7 @@ Internal web dashboard that aggregates real-time health status of ~30 SaaS servi
 All new sessions must read PRODUCTION-ROADMAP.md before proposing work.
 
 ## Current Phase
-**v2 SHIPPED — Phases 0 through 6 complete.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. **248 tests passing.** The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
+**v2 SHIPPED — Phases 0–6 complete; Phase 2B + Phase 7 (Statuspage inbound webhook + Slack ack) in tree, gated off by default.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. **276 tests passing.** The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
 
 Main also includes a parallel UX sprint that shipped alongside Phase 5:
 - **Executive / Engineer view toggle** — `ViewContext` gates the grid vs category summary and engineer-only affordances (graph, timeline, shortcuts).
@@ -19,7 +19,12 @@ Main also includes a parallel UX sprint that shipped alongside Phase 5:
 - **`recharts` SLA trend** — the service-detail drawer renders 7/30-day uptime history.
 - **Daily `VACUUM INTO` backup** — `app/backup.py` writes a snapshot at `settings.backup_time_hour`, independent of Litestream.
 
-**Phase 7 is open but optional** — inbound Statuspage webhooks, postmortem automation, SLO views, multi-burn-rate alerting, Slack slash-command bot. Tackle these as demand emerges rather than on a schedule.
+**Phase 7 partially landed:**
+- **Statuspage inbound webhook** (`POST /api/webhooks/statuspage/{service_id}`, HMAC-SHA256, optional replay protection) — code in `backend/app/router_webhooks.py`, gated by `WEBHOOKS_ENABLED` (default false). Writes directly through the alerting pipeline, bypassing flap suppression.
+- **Slack ack flow** (`POST /api/slack/interactivity`, v0 signing-secret) — code in `backend/app/router_slack.py`, gated by `SLACK_ACK_ENABLED` (default false). Block Kit messages only include the Acknowledge button when the flag is true.
+- Both features require a public endpoint (Cloudflare Tunnel / Caddy allowlist / ngrok) before flipping the flag. They ship off-by-default so the main app is unaffected.
+
+**Still open on Phase 7** — postmortem automation, SLO fuel-gauge view, multi-burn-rate alerting, Slack slash-command bot.
 
 ## Tech Stack
 - **Python:** 3.12+
