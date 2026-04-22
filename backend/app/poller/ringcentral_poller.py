@@ -9,6 +9,7 @@ import logging
 import httpx
 
 from app.poller.normalizer import ServiceStatus
+from app.poller.resilience import describe_fetch_error, resilient_fetch
 from app.poller.statuspage_poller import PollResult
 
 logger = logging.getLogger(__name__)
@@ -36,18 +37,16 @@ async def poll_ringcentral(
     We compute overall status from the worst level across all services.
     """
     try:
-        response = await client.get(poll_url)
-        response.raise_for_status()
+        response = await resilient_fetch(client, poll_url)
         services = response.json()
-    except httpx.HTTPStatusError as e:
-        logger.warning("HTTP %d from RingCentral status: %s", e.response.status_code, e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=f"HTTP {e.response.status_code}")
-    except httpx.RequestError as e:
-        logger.warning("Request error polling RingCentral status: %s", e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e))
     except Exception as e:
-        logger.warning("Unexpected error polling RingCentral status: %s", e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e))
+        detail, reason = describe_fetch_error(e)
+        logger.warning("RingCentral poll failed: %s (%s)", detail, reason)
+        return PollResult(
+            status=ServiceStatus.UNKNOWN,
+            status_detail=detail,
+            poll_failure_reason=reason,
+        )
 
     if not isinstance(services, list):
         return PollResult(status=ServiceStatus.OPERATIONAL, page_name="RingCentral")

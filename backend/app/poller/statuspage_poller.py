@@ -17,28 +17,43 @@ from app.poller.normalizer import (
     normalize_statuspage_component,
     normalize_statuspage_indicator,
 )
+from app.poller.resilience import (
+    CircuitBreakerOpen,
+    describe_fetch_error,
+    resilient_fetch,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class PollResult:
-    """Result from polling a single service's status page."""
+    """Result from polling a single service's status page.
+
+    `status_detail` carries user-facing vendor text when the poll succeeded
+    (e.g., "Investigating API latency") and a short error summary when it
+    didn't (e.g., "HTTP 502"). `poll_failure_reason` carries the mechanical
+    reason for a failed poll so the change detector can record it against
+    the service's poller-health trail separately from the status_detail the
+    UI shows. It is None when the poll succeeded.
+    """
 
     status: ServiceStatus
     status_detail: str | None = None
     page_name: str | None = None
     incidents: list[dict] = field(default_factory=list)
     scheduled_maintenances: list[dict] = field(default_factory=list)
+    poll_failure_reason: str | None = None
 
 
 async def fetch_statuspage_json(client: httpx.AsyncClient, url: str) -> dict:
     """Fetch a Statuspage.io summary.json URL and return parsed JSON.
 
-    Raises on HTTP error or parse failure — caller handles exceptions.
+    Uses resilient_fetch under the hood: retries transient errors with
+    backoff, opens a per-host circuit breaker after repeated failures.
+    Raises on HTTP error, breaker open, or parse failure — caller handles.
     """
-    response = await client.get(url)
-    response.raise_for_status()
+    response = await resilient_fetch(client, url)
     return response.json()
 
 
@@ -84,19 +99,20 @@ async def poll_statuspage(
 ) -> PollResult:
     """Poll a single Statuspage.io summary.json endpoint.
 
-    Convenience wrapper: fetches JSON then extracts status.
+    Convenience wrapper: fetches JSON then extracts status. Never raises —
+    on failure returns UNKNOWN with a poll_failure_reason that the change
+    detector records against the service's poller-health trail.
     """
     try:
         data = await fetch_statuspage_json(client, poll_url)
-    except httpx.HTTPStatusError as e:
-        logger.warning("HTTP %d from %s: %s", e.response.status_code, poll_url, e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=f"HTTP {e.response.status_code}")
-    except httpx.RequestError as e:
-        logger.warning("Request error polling %s: %s", poll_url, e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e))
     except Exception as e:
-        logger.warning("Unexpected error polling %s: %s", poll_url, e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e))
+        detail, reason = describe_fetch_error(e)
+        logger.warning("Poll failed for %s: %s (%s)", poll_url, detail, reason)
+        return PollResult(
+            status=ServiceStatus.UNKNOWN,
+            status_detail=detail,
+            poll_failure_reason=reason,
+        )
 
     return extract_service_status(data, component_name)
 
@@ -124,19 +140,15 @@ async def poll_all_statuspage(
     # Fetch each unique URL concurrently
     urls = list(url_to_services.keys())
 
-    async def _fetch_with_timeout(url: str) -> tuple[str, dict | Exception]:
+    async def _fetch_one(url: str) -> tuple[str, dict | Exception]:
+        """Fetch with resilience. Returns (url, data|exception)."""
         try:
-            data = await asyncio.wait_for(
-                fetch_statuspage_json(client, url),
-                timeout=10.0,
-            )
+            data = await fetch_statuspage_json(client, url)
             return (url, data)
         except Exception as e:
             return (url, e)
 
-    fetched = await asyncio.gather(
-        *[_fetch_with_timeout(url) for url in urls],
-    )
+    fetched = await asyncio.gather(*[_fetch_one(url) for url in urls])
 
     # Fan out results to individual services
     results: list[tuple[str, PollResult]] = []
@@ -144,15 +156,16 @@ async def poll_all_statuspage(
         svcs = url_to_services[url]
 
         if isinstance(data_or_error, Exception):
-            error = data_or_error
-            detail = str(error)
-            if isinstance(error, asyncio.TimeoutError):
-                detail = "Poll timeout (10s)"
-            logger.warning("Failed to fetch %s: %s", url, detail)
+            detail, reason = describe_fetch_error(data_or_error)
+            logger.warning("Failed to fetch %s: %s (%s)", url, detail, reason)
             for svc in svcs:
                 results.append((
                     svc["id"],
-                    PollResult(status=ServiceStatus.UNKNOWN, status_detail=detail),
+                    PollResult(
+                        status=ServiceStatus.UNKNOWN,
+                        status_detail=detail,
+                        poll_failure_reason=reason,
+                    ),
                 ))
         else:
             data = data_or_error

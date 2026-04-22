@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     # Comma-separated list of CORS origins. Default covers local dev only.
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # Poller resilience knobs — see app/poller/resilience.py
+    breaker_threshold: int = Field(default=3, gt=0, le=20)
+    breaker_ttl_seconds: float = Field(default=300.0, gt=0, le=3600)
+    poller_failure_threshold: int = Field(default=3, gt=0, le=20)
+
+    # Separate webhook for poller-health alerts ("the dashboard is blind").
+    # Keep this distinct from vendor-outage alerts so responders can tell the
+    # difference at a glance. If unset, poller-health alerts fall back to the
+    # main webhook but are tagged as such.
+    poller_health_slack_webhook_url: HttpUrl | None = None
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, v: str) -> str:
@@ -45,6 +56,15 @@ class Settings(BaseSettings):
     def slack_webhook_url_str(self) -> str | None:
         """HttpUrl as a plain string for httpx.post()."""
         return str(self.slack_webhook_url) if self.slack_webhook_url else None
+
+    @property
+    def poller_health_slack_webhook_url_str(self) -> str | None:
+        """Separate poller-health webhook URL as a plain string."""
+        return (
+            str(self.poller_health_slack_webhook_url)
+            if self.poller_health_slack_webhook_url
+            else None
+        )
 
     @property
     def services_yaml_path(self) -> Path:

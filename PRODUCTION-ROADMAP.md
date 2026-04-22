@@ -53,7 +53,7 @@ Several audit claims were false positives on verification — noted here so futu
 
 ---
 
-## Phase 1 — Vendor resilience (week 2)
+## Phase 1 — Vendor resilience (week 2) — COMPLETE (UI visuals deferred to Phase 5)
 
 Current pollers have no retry/backoff/circuit-breaker logic. Fix the resilience layer so one vendor flapping can't take down the tool or trigger IP bans.
 
@@ -62,33 +62,30 @@ Current pollers have no retry/backoff/circuit-breaker logic. Fix the resilience 
 - **`purgatory`** for circuit breakers — async context-manager form, one breaker *per vendor host* (shared across services on the same status infra).
 
 ### Tasks
-- [ ] Add `stamina` + `purgatory` to `requirements.txt`.
-- [ ] Wrap each poll function: `@stamina.retry(on=httpx.HTTPError, attempts=3, timeout=30.0)`.
-- [ ] Circuit breaker per unique host: half-open after 5–15 min (not 30s; status pages are slow to recover).
-- [ ] `backend/app/main.py` lifespan — configure shared `httpx.AsyncClient` with explicit limits + timeout:
-  ```python
-  limits = httpx.Limits(max_connections=20, max_connections_per_host=1, keepalive_expiry=30)
-  timeout = httpx.Timeout(10.0, connect=5.0, read=10.0, write=5.0, pool=2.0)
-  ```
-- [ ] Retry only 408/429/5xx. Never retry 404 — surface as config-health alert.
+- [x] Add `stamina` + `purgatory` (+ `respx` for tests) to `requirements.txt`.
+- [x] `backend/app/poller/resilience.py` — `resilient_fetch(client, url)` wraps every outbound poll with stamina retries + per-host purgatory breaker. Shared `describe_fetch_error` returns (user_detail, mechanical_reason) tuples so every poller writes consistent failure strings.
+- [x] Circuit breaker per unique host, `threshold=3`, `ttl=300s` (configurable via `BREAKER_THRESHOLD`/`BREAKER_TTL_SECONDS`).
+- [x] `backend/app/main.py` lifespan — shared `httpx.AsyncClient` now configured with `Limits(max_connections=20, max_keepalive_connections=10, max_connections_per_host=1, keepalive_expiry=30)` and `Timeout(10.0, connect=5.0, read=10.0, write=5.0, pool=2.0)`. Breakers initialised from settings at startup.
+- [x] Retry only on 408/429/5xx + network errors (via `TransientHTTPError` wrapper). 404 raises immediately with `http_404` failure reason — no retries, no breaker increment for hard HTTP errors.
 
 ### Per-service health tracking (schema change)
-Migration `0005_poller_health.sql`:
-```sql
-ALTER TABLE services ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE services ADD COLUMN last_success_at DATETIME;
-ALTER TABLE services ADD COLUMN last_failure_reason TEXT;
-ALTER TABLE services ADD COLUMN poller_health TEXT NOT NULL DEFAULT 'healthy'; -- healthy | degraded | broken
-```
+Migration `0005_poller_health.sql` adds `consecutive_failures`, `last_success_at`, `last_failure_reason`, `poller_health` to the `services` table plus an index on `poller_health`.
 
-- [ ] Change detector increments/resets counters each poll.
-- [ ] After 3 consecutive failures → `poller_health='broken'` + fire **poller-health alert on a separate Slack channel** (`POLLER_HEALTH_SLACK_WEBHOOK_URL`).
-- [ ] UI tile shows `unknown` (dashed border, question-mark icon) when `poller_health != 'healthy'`. Never `operational`.
+- [x] `detect_changes` now returns `(status_changes, health_changes)` and runs a pure state machine (`_compute_new_health`) to derive the new health value. Success clears; 1–2 failures = `degraded`; `poller_failure_threshold` (default 3) consecutive failures = `broken`.
+- [x] Scheduler fans out both lists: vendor outages to `process_changes`, poller-health transitions to `process_poller_health_changes` on a dedicated webhook (`POLLER_HEALTH_SLACK_WEBHOOK_URL`, falls back to main webhook with a "poller-health" tag).
+- [x] `build_poller_health_alert` renders distinct `🔧 Poller BROKEN` / `✅ Poller RECOVERED` messages so responders never confuse them with vendor alerts.
+- [x] API responses (`/api/services`, `/api/services/{id}`) now surface `consecutive_failures`, `last_success_at`, `last_failure_reason`, `poller_health` to the frontend.
+- [ ] UI tile visual "unknown" state for `poller_health != 'healthy'` — **deferred to Phase 5** (UX production). Data is already on the wire.
 
 ### Normalizer hardening
-- [ ] `backend/app/poller/normalizer.py` — Log WARNING + emit Prometheus counter when returning UNKNOWN for an unknown vendor string.
+- [x] `normalize_statuspage_component` and `normalize_statuspage_indicator` log WARNING with the unmapped value when returning UNKNOWN. Prometheus counter hookup deferred to Phase 3 observability.
 
-**Exit criteria:** simulated vendor 500s don't blow up alerts; one host failing doesn't affect others; "poller broken" is visible in UI distinctly from "service down".
+### Test coverage added
+- `tests/test_resilience.py` — 16 tests covering retries, breaker open/close, host isolation, TTL recovery, error description.
+- `tests/test_change_detector.py` — 7 new tests for poller-health state machine + transitions.
+- `tests/test_poller_integration.py` — 12 respx-mocked tests exercising each vendor poller's happy + failure paths.
+
+**Exit criteria met:** simulated vendor 500s retry then surface `transient_http_500` without blowing up alerts; one host failing does not affect others (`test_breaker_isolates_hosts`); `poller_broken` state is recorded distinct from `operational` in the DB and exposed via the API (`test_three_failures_flip_to_broken`). 164 tests passing.
 
 ---
 

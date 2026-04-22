@@ -1,6 +1,9 @@
 """Normalize vendor-specific status strings to our unified 5-state enum."""
 
+import logging
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class ServiceStatus(str, Enum):
@@ -24,7 +27,16 @@ STATUSPAGE_COMPONENT_MAP: dict[str, ServiceStatus] = {
 
 def normalize_statuspage_component(status: str) -> ServiceStatus:
     """Map a Statuspage.io component status string to ServiceStatus."""
-    return STATUSPAGE_COMPONENT_MAP.get(status.lower().strip(), ServiceStatus.UNKNOWN)
+    key = status.lower().strip()
+    mapped = STATUSPAGE_COMPONENT_MAP.get(key)
+    if mapped is None:
+        logger.warning(
+            "Unmapped Statuspage component status %r — returning UNKNOWN. "
+            "Add to STATUSPAGE_COMPONENT_MAP if this vendor value is legitimate.",
+            status,
+        )
+        return ServiceStatus.UNKNOWN
+    return mapped
 
 
 # ── Statuspage.io: Page-level indicator → ServiceStatus ────────────
@@ -39,7 +51,14 @@ STATUSPAGE_INDICATOR_MAP: dict[str, ServiceStatus] = {
 
 def normalize_statuspage_indicator(indicator: str) -> ServiceStatus:
     """Map a Statuspage.io page-level status indicator to ServiceStatus."""
-    return STATUSPAGE_INDICATOR_MAP.get(indicator.lower().strip(), ServiceStatus.UNKNOWN)
+    key = indicator.lower().strip()
+    mapped = STATUSPAGE_INDICATOR_MAP.get(key)
+    if mapped is None:
+        logger.warning(
+            "Unmapped Statuspage indicator %r — returning UNKNOWN.", indicator,
+        )
+        return ServiceStatus.UNKNOWN
+    return mapped
 
 
 # ── Slack Status API ───────────────────────────────────────────────

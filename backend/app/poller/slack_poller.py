@@ -9,6 +9,7 @@ import logging
 import httpx
 
 from app.poller.normalizer import ServiceStatus, normalize_slack_status
+from app.poller.resilience import describe_fetch_error, resilient_fetch
 from app.poller.statuspage_poller import PollResult
 
 logger = logging.getLogger(__name__)
@@ -28,22 +29,24 @@ async def poll_slack(
         PollResult with normalized status.
     """
     try:
-        response = await client.get(poll_url)
-        response.raise_for_status()
+        response = await resilient_fetch(client, poll_url)
         data = response.json()
-    except httpx.HTTPStatusError as e:
-        logger.warning("HTTP %d from Slack status: %s", e.response.status_code, e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=f"HTTP {e.response.status_code}")
-    except httpx.RequestError as e:
-        logger.warning("Request error polling Slack status: %s", e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e))
     except Exception as e:
-        logger.warning("Unexpected error polling Slack status: %s", e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e))
+        detail, reason = describe_fetch_error(e)
+        logger.warning("Slack poll failed: %s (%s)", detail, reason)
+        return PollResult(
+            status=ServiceStatus.UNKNOWN,
+            status_detail=detail,
+            poll_failure_reason=reason,
+        )
 
     if not isinstance(data, dict):
         logger.warning("Slack API returned non-dict response: %s", type(data).__name__)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail="Unexpected response format")
+        return PollResult(
+            status=ServiceStatus.UNKNOWN,
+            status_detail="Unexpected response format",
+            poll_failure_reason=f"parse_error: expected dict, got {type(data).__name__}",
+        )
 
     status = normalize_slack_status(data)
 

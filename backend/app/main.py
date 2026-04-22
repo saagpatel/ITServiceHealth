@@ -39,10 +39,32 @@ async def lifespan(app: FastAPI):
     deps = load_dependencies(known_service_ids={s.id for s in services})
     await seed_dependencies(deps, [s.id for s in services])
 
-    # Create shared HTTP client for all pollers
+    # Create shared HTTP client for all pollers.
+    # Limits cap simultaneous connections (total and per-host) so one misbehaving
+    # vendor can't starve the pool. Explicit pool timeout prevents deadlock when
+    # the pool saturates.
     app.state.http_client = httpx.AsyncClient(
         follow_redirects=True,
-        timeout=httpx.Timeout(30.0, connect=10.0),
+        timeout=httpx.Timeout(
+            10.0,
+            connect=5.0,
+            read=10.0,
+            write=5.0,
+            pool=2.0,
+        ),
+        limits=httpx.Limits(
+            max_connections=20,
+            max_keepalive_connections=10,
+            max_connections_per_host=1,
+            keepalive_expiry=30.0,
+        ),
+    )
+
+    # Initialize per-host circuit breakers for the resilience layer
+    from app.poller.resilience import configure_breakers
+    configure_breakers(
+        threshold=settings.breaker_threshold,
+        ttl_seconds=settings.breaker_ttl_seconds,
     )
 
     # Seed demo data if configured

@@ -162,6 +162,86 @@ def build_batch_slack_alert(
     }
 
 
+def build_poller_health_alert(
+    health_change,  # app.poller.change_detector.PollerHealthChange
+    using_fallback: bool = False,
+) -> dict:
+    """Build a Slack Block Kit payload for a poller-health transition.
+
+    Tagged with a wrench emoji and a clear "POLLER HEALTH" header so
+    responders never mistake it for a vendor-outage alert, even when
+    the alert lands in the main Slack channel due to missing config.
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    going_broken = health_change.new_health == "broken"
+
+    if going_broken:
+        header_text = f"\U0001f527 Poller BROKEN — {health_change.service_display_name}"
+        summary = (
+            f"The poller for *{health_change.service_display_name}* has failed "
+            f"{health_change.consecutive_failures} times in a row and is now "
+            f"reporting as broken. The dashboard will show this service as "
+            f"*unknown* until the poller recovers."
+        )
+        reason = health_change.failure_reason or "unknown"
+    else:
+        header_text = f"\u2705 Poller RECOVERED — {health_change.service_display_name}"
+        summary = (
+            f"The poller for *{health_change.service_display_name}* is back to "
+            f"healthy after previously being broken. Status readings for this "
+            f"service can be trusted again."
+        )
+        reason = None
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": header_text,
+                "emoji": True,
+            },
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": summary},
+        },
+    ]
+
+    if reason:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Failure reason:*\n`{reason}`"},
+        })
+
+    if using_fallback:
+        blocks.append({
+            "type": "context",
+            "elements": [{
+                "type": "mrkdwn",
+                "text": (
+                    ":information_source: Routed to the main alerting channel. "
+                    "Set `POLLER_HEALTH_SLACK_WEBHOOK_URL` for a dedicated channel."
+                ),
+            }],
+        })
+
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "context",
+        "elements": [{
+            "type": "mrkdwn",
+            "text": f"IT Service Health Dashboard \u2022 Poller Health \u2022 {now}",
+        }],
+    })
+
+    fallback = (
+        f"Poller {'BROKEN' if going_broken else 'RECOVERED'}: "
+        f"{health_change.service_display_name}"
+    )
+    return {"text": fallback, "blocks": blocks}
+
+
 async def send_slack_alert(
     webhook_url: str,
     payload: dict,

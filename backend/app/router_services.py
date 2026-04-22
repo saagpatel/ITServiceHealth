@@ -18,14 +18,16 @@ async def list_services(category: str | None = None) -> dict:
     if category:
         cursor = await db.execute(
             """SELECT id, display_name, category, current_status, current_status_detail,
-                      poll_type, status_page_url, last_polled_at, last_status_change_at
+                      poll_type, status_page_url, last_polled_at, last_status_change_at,
+                      consecutive_failures, last_success_at, last_failure_reason, poller_health
                FROM services WHERE category = ? ORDER BY category, display_name""",
             (category,),
         )
     else:
         cursor = await db.execute(
             """SELECT id, display_name, category, current_status, current_status_detail,
-                      poll_type, status_page_url, last_polled_at, last_status_change_at
+                      poll_type, status_page_url, last_polled_at, last_status_change_at,
+                      consecutive_failures, last_success_at, last_failure_reason, poller_health
                FROM services ORDER BY category, display_name"""
         )
 

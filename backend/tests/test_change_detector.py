@@ -5,7 +5,9 @@ import asyncio
 import pytest
 
 from app.poller.change_detector import (
+    PollerHealthChange,
     StatusChange,
+    _compute_new_health,
     apply_manual_update,
     detect_changes,
     upsert_maintenances,
@@ -31,14 +33,14 @@ class TestDetectChanges:
         lock = asyncio.Lock()
 
         result = PollResult(status=ServiceStatus.DEGRADED, status_detail="Slow responses")
-        changes = await detect_changes(db, lock, [("svc-a", result)])
+        changes, health_changes = await detect_changes(db, lock, [("svc-a", result)])
 
         assert len(changes) == 1
         assert changes[0].previous_status == "operational"
         assert changes[0].new_status == "degraded"
         assert changes[0].status_detail == "Slow responses"
+        assert health_changes == []
 
-        # Verify status_event was created
         cursor = await db.execute("SELECT * FROM status_events WHERE service_id='svc-a'")
         events = await cursor.fetchall()
         assert len(events) == 1
@@ -52,20 +54,27 @@ class TestDetectChanges:
         result = PollResult(status=ServiceStatus.MAJOR_OUTAGE, status_detail="Down")
         await detect_changes(db, lock, [("svc-b", result)])
 
-        cursor = await db.execute("SELECT current_status, current_status_detail, last_status_change_at FROM services WHERE id='svc-b'")
+        cursor = await db.execute(
+            """SELECT current_status, current_status_detail, last_status_change_at,
+                     last_success_at, poller_health
+               FROM services WHERE id='svc-b'"""
+        )
         row = dict(await cursor.fetchone())
         assert row["current_status"] == "major_outage"
         assert row["current_status_detail"] == "Down"
         assert row["last_status_change_at"] is not None
+        assert row["last_success_at"] is not None
+        assert row["poller_health"] == "healthy"
 
     async def test_no_change_updates_polled_at(self, db):
         await _insert_service(db, "svc-c", "operational")
         lock = asyncio.Lock()
 
         result = PollResult(status=ServiceStatus.OPERATIONAL, status_detail="All good")
-        changes = await detect_changes(db, lock, [("svc-c", result)])
+        changes, health_changes = await detect_changes(db, lock, [("svc-c", result)])
 
         assert len(changes) == 0
+        assert health_changes == []
 
         cursor = await db.execute("SELECT last_polled_at, current_status_detail FROM services WHERE id='svc-c'")
         row = dict(await cursor.fetchone())
@@ -86,15 +95,27 @@ class TestDetectChanges:
         await _insert_service(db, "svc-e", "operational")
         lock = asyncio.Lock()
 
-        result = PollResult(status=ServiceStatus.UNKNOWN, status_detail="Poll timeout")
-        changes = await detect_changes(db, lock, [("svc-e", result)])
+        result = PollResult(
+            status=ServiceStatus.UNKNOWN,
+            status_detail="Poll timeout",
+            poll_failure_reason="timeout",
+        )
+        changes, health_changes = await detect_changes(db, lock, [("svc-e", result)])
 
         assert len(changes) == 0
+        assert health_changes == []  # One failure isn't enough to flip to broken
 
-        cursor = await db.execute("SELECT current_status, last_polled_at FROM services WHERE id='svc-e'")
+        cursor = await db.execute(
+            """SELECT current_status, last_polled_at, consecutive_failures,
+                     last_failure_reason, poller_health
+               FROM services WHERE id='svc-e'"""
+        )
         row = dict(await cursor.fetchone())
         assert row["current_status"] == "operational"  # Preserved!
         assert row["last_polled_at"] is not None
+        assert row["consecutive_failures"] == 1
+        assert row["last_failure_reason"] == "timeout"
+        assert row["poller_health"] == "degraded"
 
     async def test_multiple_changes_in_batch(self, db):
         await _insert_service(db, "svc-f", "operational")
@@ -107,16 +128,100 @@ class TestDetectChanges:
             ("svc-g", PollResult(status=ServiceStatus.OPERATIONAL)),  # no change
             ("svc-h", PollResult(status=ServiceStatus.MAJOR_OUTAGE)),
         ]
-        changes = await detect_changes(db, lock, results)
+        changes, health_changes = await detect_changes(db, lock, results)
 
         assert len(changes) == 2
         changed_ids = {c.service_id for c in changes}
         assert changed_ids == {"svc-f", "svc-h"}
+        assert health_changes == []
 
     async def test_empty_results(self, db):
         lock = asyncio.Lock()
-        changes = await detect_changes(db, lock, [])
-        assert changes == []
+        result = await detect_changes(db, lock, [])
+        assert result == ([], [])
+
+
+class TestPollerHealthStateMachine:
+    def test_success_always_clears(self):
+        assert _compute_new_health("broken", 0, True, threshold=3) == "healthy"
+        assert _compute_new_health("degraded", 0, True, threshold=3) == "healthy"
+        assert _compute_new_health("healthy", 0, True, threshold=3) == "healthy"
+
+    def test_single_failure_is_degraded(self):
+        assert _compute_new_health("healthy", 1, False, threshold=3) == "degraded"
+
+    def test_threshold_flip_to_broken(self):
+        assert _compute_new_health("degraded", 3, False, threshold=3) == "broken"
+
+    def test_above_threshold_stays_broken(self):
+        assert _compute_new_health("broken", 10, False, threshold=3) == "broken"
+
+
+class TestPollerHealthTransitions:
+    async def test_three_failures_flip_to_broken(self, db):
+        await _insert_service(db, "flaky", "operational")
+        lock = asyncio.Lock()
+
+        fail = PollResult(
+            status=ServiceStatus.UNKNOWN,
+            status_detail="gone",
+            poll_failure_reason="request_error: ConnectError",
+        )
+
+        # Two failures — still just degraded
+        await detect_changes(db, lock, [("flaky", fail)])
+        _, hc2 = await detect_changes(db, lock, [("flaky", fail)])
+        assert hc2 == []
+
+        # Third failure trips the threshold
+        _, hc3 = await detect_changes(db, lock, [("flaky", fail)])
+        assert len(hc3) == 1
+        assert isinstance(hc3[0], PollerHealthChange)
+        assert hc3[0].service_id == "flaky"
+        assert hc3[0].new_health == "broken"
+        assert hc3[0].previous_health == "degraded"
+        assert hc3[0].consecutive_failures == 3
+        assert hc3[0].failure_reason == "request_error: ConnectError"
+
+    async def test_recovery_emits_transition(self, db):
+        await _insert_service(db, "recov", "operational")
+        lock = asyncio.Lock()
+
+        fail = PollResult(
+            status=ServiceStatus.UNKNOWN,
+            poll_failure_reason="timeout",
+        )
+        good = PollResult(status=ServiceStatus.OPERATIONAL)
+
+        # Drive to broken
+        await detect_changes(db, lock, [("recov", fail)])
+        await detect_changes(db, lock, [("recov", fail)])
+        _, hc_broken = await detect_changes(db, lock, [("recov", fail)])
+        assert hc_broken[0].new_health == "broken"
+
+        # Next success should recover + emit a health change back to healthy
+        _, hc_recover = await detect_changes(db, lock, [("recov", good)])
+        assert len(hc_recover) == 1
+        assert hc_recover[0].previous_health == "broken"
+        assert hc_recover[0].new_health == "healthy"
+        assert hc_recover[0].consecutive_failures == 0
+
+    async def test_degraded_to_broken_only_fires_once(self, db):
+        await _insert_service(db, "once", "operational")
+        lock = asyncio.Lock()
+
+        fail = PollResult(
+            status=ServiceStatus.UNKNOWN,
+            poll_failure_reason="timeout",
+        )
+
+        # Go broken
+        for _ in range(3):
+            await detect_changes(db, lock, [("once", fail)])
+
+        # Additional failures while already broken should not re-emit
+        _, hc = await detect_changes(db, lock, [("once", fail)])
+        assert hc == []
 
 
 class TestApplyManualUpdate:

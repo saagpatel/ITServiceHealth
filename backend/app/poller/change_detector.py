@@ -3,6 +3,11 @@
 Handles status change detection, status_events creation, service updates,
 and scheduled maintenance upserts. Used by both the automated poll cycle
 and the manual status update API.
+
+Also tracks per-service poller health (healthy | degraded | broken) so
+the UI can distinguish "vendor is down" from "our poller is blind." A run
+of consecutive failures past the configured threshold flips the service
+to `broken`; a single success clears it.
 """
 
 import logging
@@ -11,6 +16,7 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
+from app.config import settings
 from app.poller.normalizer import ServiceStatus
 from app.poller.statuspage_poller import PollResult
 
@@ -31,34 +37,76 @@ class StatusChange:
     event_id: int | None = None
 
 
+@dataclass
+class PollerHealthChange:
+    """Poller-health state transition detected during a poll cycle.
+
+    Emitted alongside StatusChange for the alerting engine to route onto a
+    distinct Slack channel: vendor outages are one kind of news, our own
+    blind spot is another. Only the transitions in/out of `broken` produce
+    these; the noisy `healthy -> degraded` path stays silent by design.
+    """
+
+    service_id: str
+    service_display_name: str
+    previous_health: str
+    new_health: str
+    consecutive_failures: int
+    failure_reason: str | None
+
+
+def _compute_new_health(
+    current_health: str,
+    consecutive_failures: int,
+    poll_succeeded: bool,
+    threshold: int,
+) -> str:
+    """Pure state-machine decision for the new poller_health value.
+
+    - A successful poll always resets to 'healthy'.
+    - After `threshold` consecutive failures, health is 'broken'.
+    - Any failure short of the threshold is 'degraded'.
+    """
+    if poll_succeeded:
+        return "healthy"
+    if consecutive_failures >= threshold:
+        return "broken"
+    return "degraded"
+
+
 async def detect_changes(
     db: aiosqlite.Connection,
     write_lock: "asyncio.Lock",
     poll_results: list[tuple[str, PollResult]],
-) -> list[StatusChange]:
+) -> tuple[list[StatusChange], list[PollerHealthChange]]:
     """Compare poll results against current DB state and write changes.
 
+    Returns a pair (status_changes, health_changes) so the caller can route
+    vendor-outage alerts and poller-health alerts onto distinct Slack
+    channels with different urgency policies.
+
     For each poll result:
-    - If UNKNOWN: preserve current status, only update last_polled_at
-    - If status changed: update service + insert status_event
-    - If same status: update last_polled_at and current_status_detail
+    - Poller health is always reassessed (success clears, failures
+      accumulate, threshold crossings emit PollerHealthChange).
+    - If UNKNOWN: preserve current status, update last_polled_at + health.
+    - If status changed: update service + insert status_event.
+    - If same status: update last_polled_at and current_status_detail.
 
     Also upserts scheduled maintenances from statuspage poll results.
-
-    Returns list of StatusChange for downstream alerting.
     """
     import asyncio
 
     if not poll_results:
-        return []
+        return [], []
 
     service_ids = [sid for sid, _ in poll_results]
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Batch-read current state
+    # Batch-read current state including poller-health trail
     placeholders = ",".join("?" for _ in service_ids)
     cursor = await db.execute(
-        f"""SELECT id, display_name, current_status, poll_type, status_page_url
+        f"""SELECT id, display_name, current_status, poll_type, status_page_url,
+                   consecutive_failures, poller_health
             FROM services WHERE id IN ({placeholders})""",
         service_ids,
     )
@@ -66,6 +114,8 @@ async def detect_changes(
     current_state = {row[0]: dict(row) for row in rows}
 
     changes: list[StatusChange] = []
+    health_changes: list[PollerHealthChange] = []
+    threshold = settings.poller_failure_threshold
 
     async with write_lock:
         for service_id, poll_result in poll_results:
@@ -74,12 +124,66 @@ async def detect_changes(
                 logger.warning("Service '%s' not found in DB, skipping", service_id)
                 continue
 
-            # If poll failed (UNKNOWN), preserve last-known status
-            if poll_result.status == ServiceStatus.UNKNOWN:
-                await db.execute(
-                    "UPDATE services SET last_polled_at = ? WHERE id = ?",
-                    (now, service_id),
+            poll_succeeded = poll_result.status != ServiceStatus.UNKNOWN
+            prev_health = svc["poller_health"]
+            prev_failures = svc["consecutive_failures"] or 0
+
+            new_failures = 0 if poll_succeeded else prev_failures + 1
+            new_health = _compute_new_health(
+                prev_health, new_failures, poll_succeeded, threshold,
+            )
+
+            # Only emit health changes for broken transitions — the signal
+            # we want operators to see in #poller-health.
+            if prev_health != "broken" and new_health == "broken":
+                health_changes.append(PollerHealthChange(
+                    service_id=service_id,
+                    service_display_name=svc["display_name"],
+                    previous_health=prev_health,
+                    new_health=new_health,
+                    consecutive_failures=new_failures,
+                    failure_reason=poll_result.poll_failure_reason,
+                ))
+                logger.warning(
+                    "Poller BROKEN for %s (%s) after %d failures: %s",
+                    svc["display_name"], service_id,
+                    new_failures, poll_result.poll_failure_reason,
                 )
+            elif prev_health == "broken" and new_health == "healthy":
+                health_changes.append(PollerHealthChange(
+                    service_id=service_id,
+                    service_display_name=svc["display_name"],
+                    previous_health=prev_health,
+                    new_health=new_health,
+                    consecutive_failures=0,
+                    failure_reason=None,
+                ))
+                logger.info(
+                    "Poller RECOVERED for %s (%s)",
+                    svc["display_name"], service_id,
+                )
+
+            # Update the health-trail columns every cycle
+            await db.execute(
+                """UPDATE services
+                   SET consecutive_failures = ?,
+                       poller_health = ?,
+                       last_failure_reason = ?,
+                       last_success_at = CASE WHEN ? THEN ? ELSE last_success_at END,
+                       last_polled_at = ?
+                   WHERE id = ?""",
+                (
+                    new_failures,
+                    new_health,
+                    poll_result.poll_failure_reason if not poll_succeeded else None,
+                    poll_succeeded, now,
+                    now,
+                    service_id,
+                ),
+            )
+
+            # If poll failed, preserve last-known status and move on
+            if not poll_succeeded:
                 continue
 
             new_status = poll_result.status.value
@@ -90,9 +194,9 @@ async def detect_changes(
                 await db.execute(
                     """UPDATE services
                        SET current_status = ?, current_status_detail = ?,
-                           last_polled_at = ?, last_status_change_at = ?
+                           last_status_change_at = ?
                        WHERE id = ?""",
-                    (new_status, poll_result.status_detail, now, now, service_id),
+                    (new_status, poll_result.status_detail, now, service_id),
                 )
 
                 vendor_title = _extract_vendor_title(poll_result)
@@ -124,12 +228,12 @@ async def detect_changes(
                     svc["display_name"], service_id, old_status, new_status,
                 )
             else:
-                # Same status — just update polled time and detail
+                # Same status — just update detail
                 await db.execute(
                     """UPDATE services
-                       SET last_polled_at = ?, current_status_detail = ?
+                       SET current_status_detail = ?
                        WHERE id = ?""",
-                    (now, poll_result.status_detail, service_id),
+                    (poll_result.status_detail, service_id),
                 )
 
             # Upsert scheduled maintenances (statuspage services only)
@@ -138,7 +242,7 @@ async def detect_changes(
 
         await db.commit()
 
-    return changes
+    return changes, health_changes
 
 
 async def apply_manual_update(

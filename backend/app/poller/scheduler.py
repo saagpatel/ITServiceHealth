@@ -126,17 +126,25 @@ async def run_poll_cycle(app) -> None:
         # Run change detection
         from app.poller.change_detector import detect_changes
 
-        changes = await detect_changes(db, write_lock, all_results)
+        changes, health_changes = await detect_changes(db, write_lock, all_results)
 
-        # Process changes: impact statements + Slack alerts
+        # Process vendor-outage changes: impact statements + Slack alerts
         if changes:
             from app.alerting.engine import process_changes
             await process_changes(db, write_lock, changes, http_client=client)
 
+        # Process poller-health changes: alert on the separate poller-health
+        # webhook so operators can tell "we're blind" from "vendor is down".
+        if health_changes:
+            from app.alerting.engine import process_poller_health_changes
+            await process_poller_health_changes(
+                health_changes, http_client=client,
+            )
+
         # Log summary
         logger.info(
-            "Poll cycle complete: %d services polled, %d changes detected",
-            len(all_results), len(changes),
+            "Poll cycle complete: %d services polled, %d changes, %d health",
+            len(all_results), len(changes), len(health_changes),
         )
         for change in changes:
             logger.info(
@@ -144,6 +152,14 @@ async def run_poll_cycle(app) -> None:
                 change.service_display_name,
                 change.previous_status,
                 change.new_status,
+            )
+        for hc in health_changes:
+            logger.info(
+                "  [health] %s: %s → %s (%d fails)",
+                hc.service_display_name,
+                hc.previous_health,
+                hc.new_health,
+                hc.consecutive_failures,
             )
 
     except Exception:

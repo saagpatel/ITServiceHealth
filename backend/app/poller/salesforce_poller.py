@@ -9,6 +9,7 @@ import logging
 import httpx
 
 from app.poller.normalizer import ServiceStatus
+from app.poller.resilience import describe_fetch_error, resilient_fetch
 from app.poller.statuspage_poller import PollResult
 
 logger = logging.getLogger(__name__)
@@ -24,18 +25,16 @@ async def poll_salesforce(
     (no resolvedAt), the service is degraded/outaged.
     """
     try:
-        response = await client.get(poll_url)
-        response.raise_for_status()
+        response = await resilient_fetch(client, poll_url)
         incidents = response.json()
-    except httpx.HTTPStatusError as e:
-        logger.warning("HTTP %d from Salesforce Trust API: %s", e.response.status_code, e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=f"HTTP {e.response.status_code}")
-    except httpx.RequestError as e:
-        logger.warning("Request error polling Salesforce Trust API: %s", e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e))
     except Exception as e:
-        logger.warning("Unexpected error polling Salesforce Trust API: %s", e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e))
+        detail, reason = describe_fetch_error(e)
+        logger.warning("Salesforce poll failed: %s (%s)", detail, reason)
+        return PollResult(
+            status=ServiceStatus.UNKNOWN,
+            status_detail=detail,
+            poll_failure_reason=reason,
+        )
 
     if not isinstance(incidents, list):
         return PollResult(status=ServiceStatus.OPERATIONAL, page_name="Salesforce")
