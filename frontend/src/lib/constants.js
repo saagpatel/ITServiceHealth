@@ -1,3 +1,12 @@
+import {
+  CheckCircle2,
+  AlertTriangle,
+  AlertOctagon,
+  XOctagon,
+  HelpCircle,
+  WifiOff,
+} from "lucide-react";
+
 export const STATUS_COLORS = {
   operational: "#34d399",
   degraded: "#fbbf24",
@@ -32,12 +41,46 @@ export const STATUS_LABELS = {
   unknown: "Unknown",
 };
 
+// Lucide icon components — distinct shape AND color so tiles read for
+// colorblind users and screen readers alike (WCAG 1.4.1, "Use of Color").
+// Each status has a visually-distinct shape: circle/triangle/octagon/X/?.
+export const STATUS_ICON_COMPONENTS = {
+  operational: CheckCircle2,
+  degraded: AlertTriangle,
+  partial_outage: AlertOctagon,
+  major_outage: XOctagon,
+  unknown: HelpCircle,
+};
+
+// Icon for the poller-is-broken variant of "unknown" — tells the operator
+// "we can't reach the vendor" rather than "the vendor hasn't told us yet".
+export const POLLER_BROKEN_ICON = WifiOff;
+
+// Kept for places we still want a one-char inline marker (e.g., chips).
 export const STATUS_ICONS = {
   operational: "✓",
   degraded: "⚠",
   partial_outage: "●",
   major_outage: "✕",
-  unknown: "—",
+  unknown: "?",
+};
+
+// Severity rank used for sorting worst-first. Unknown is ranked between
+// operational and degraded because its meaning varies: a fresh boot is
+// better than degraded; a broken poller is worse than operational. The
+// poller_health signal (below) lets the grid distinguish the two.
+export const STATUS_SEVERITY_RANK = {
+  major_outage: 4,
+  partial_outage: 3,
+  degraded: 2,
+  unknown: 1,
+  operational: 0,
+};
+
+export const POLLER_HEALTH_LABELS = {
+  healthy: "Poller healthy",
+  degraded: "Poller degraded",
+  broken: "Poller broken — readings may be stale",
 };
 
 export const CATEGORY_ORDER = [
@@ -63,3 +106,20 @@ export const POLL_INTERVAL_MS = 30_000;
 export const UPTIME_POLL_INTERVAL_MS = 300_000;
 export const STALE_WARNING_MS = 90_000;
 export const STALE_CRITICAL_MS = 180_000;
+
+/** Compute the effective status we should render for a service.
+ *
+ * If the poller is broken we force `unknown` — rendering `operational`
+ * while we're actually blind is the single worst dashboard UX bug.
+ * Recoveries from broken (unknown→operational) bubble through via the
+ * normal poll path. */
+export function effectiveStatus(service) {
+  if (!service) return "unknown";
+  if (service.poller_health === "broken") return "unknown";
+  return service.current_status || "unknown";
+}
+
+/** Is this service in the "we can't reach the vendor" state? */
+export function isPollerBroken(service) {
+  return service?.poller_health === "broken";
+}

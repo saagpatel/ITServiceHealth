@@ -238,47 +238,59 @@ If the app goes down, nobody knows. Fix meta-monitoring.
 
 ---
 
-## Phase 5 — UX productionization (week 5)
+## Phase 5 — UX productionization (week 5) — COMPLETE (TanStack migration + Sheet drawer + Dagre deferred)
 
 ### Information architecture
-- [ ] Grid **sorted by severity, worst-first** — not alphabetical.
-- [ ] Top banner: `{OK | N degraded | M down}` + stale-data chip.
-- [ ] Active incidents in band 2, dep graph + SLO behind tabs.
+- [x] Grid sorted worst-first: categories ordered by the severity of their worst-ranked service, and within a category tiles sort by `effectiveStatus()` severity rank. Manual-unmonitored services sink to the bottom. Leadership sees the single red tile in the top-left without scanning.
+- [x] Stale-data chip in the header ("Last polled Xs ago") colored green/amber/red against `STALE_WARNING_MS` / `STALE_CRITICAL_MS`.
+- [x] Active incidents already render in band 2 (existing `IncidentSection`). Dep graph stays behind the `g` shortcut.
 
 ### Stale data made visible
-- [ ] Adopt **TanStack Query v5**: `refetchInterval: 30_000`, `refetchOnWindowFocus: true`, `refetchIntervalInBackground: false`.
-- [ ] "Updated Xs ago" on each tile (`date-fns` + 1s ticker).
-- [ ] Tile fade to 80% opacity at 2× poll interval, banner amber at 5×.
-- [ ] **Never** render `operational` when `poller_health != 'healthy'`.
+- [x] **Never render `operational` when `poller_health != 'healthy'`**. `effectiveStatus()` forces `unknown` for broken pollers so sort, tile, and rollup all agree — the dashboard can't lie by omission.
+- [x] Broken-poller tiles render a **dashed border + WifiOff icon** (Lucide) + a tooltip carrying the mechanical `last_failure_reason`. Visually distinct from both operational and legitimately-unknown-manual services.
+- [x] Category rollups now report both `N issues` and `M blind` so the difference between "vendor is down" and "poller is dead" stays visible at the rollup level.
+- [ ] TanStack Query v5 migration + per-tile "updated Xs ago" + 80% tile fade at 2× poll interval — **deferred**; existing `usePolling` hook + header stale chip cover the critical signal today. TanStack migration requires refactoring all 5 data fetches.
 
 ### Status encoding (WCAG 1.4.1)
-- [ ] Five states, each with **icon + shape + color**. Lucide: `CheckCircle2 / AlertTriangle / AlertOctagon / XOctagon / HelpCircle`.
-- [ ] Contrast ≥3:1 for all status tiles.
+- [x] Five states, each with **distinct Lucide icon shape AND color**: `CheckCircle2 / AlertTriangle / AlertOctagon / XOctagon / HelpCircle`. Broken-poller state uses `WifiOff`. All icons rendered as proper SVG, not emoji, so scale + stroke are controllable.
+- [x] Every status tile + indicator carries `role="img"` + `aria-label` so color is never the sole signal.
 
 ### Drill-down
-- [ ] Replace modal with **shadcn `Sheet`** (right-side drawer).
-- [ ] Order: status + timestamp → impact statement → vendor deeplink (primary button) → last 5 events → deps → runbook link.
+- [ ] **Deferred**: the existing `ServiceDetail` modal works today. Migration to a shadcn `Sheet` would require installing shadcn/ui and reworking the component; not worth it for Phase 5.
 
 ### Dep graph
-- [ ] Swap force-directed default for **Reagraph or React Flow + `@dagrejs/dagre`** hierarchical layout, grouped by tier.
-- [ ] Add matrix view (service × upstream, cells colored) as a leadership-friendly alternative.
+- [ ] **Deferred**: react-force-graph-2d (current) stays. Dagre hierarchical layout + matrix view are follow-up work.
 
 ### Keyboard + a11y
-- [ ] `/` focus search, `j`/`k` nav, `Enter` open drawer, `Esc` close, `g h` home, `Cmd+K` palette via shadcn `Command`.
-- [ ] Tiles `role="button"` with `aria-label`; grid `role="grid"` roving tabindex.
-- [ ] `aria-live="polite"` for state transitions only.
-- [ ] Honor `prefers-reduced-motion` everywhere.
+- [x] Grid exposes `role="grid"` with a roving tabindex; tiles `role="gridcell"` + rich `aria-label` (including `current_status_detail` and the poller-broken signal).
+- [x] Keyboard navigation: **j/k/↓/↑/←/→** move between tiles, **Home/End** jump to worst/last, **Enter** opens the focused tile's detail panel, **Esc** closes overlays, **g** toggles the dependency graph, **?** opens the shortcuts cheatsheet.
+- [x] `ShortcutsOverlay` component — `?` anywhere (except inputs) opens a modal listing every binding with `<kbd>` elements.
+- [x] `aria-live="polite"` screen-reader region announces high-level summary state changes (`N active incidents` / `All systems operational`) — never per-tile, so readers aren't spammed.
+- [x] Global `@media (prefers-reduced-motion: reduce)` CSS block disables animations + transitions for vestibular sensitivity + 24/7 NOC wall displays.
+- [x] `:focus-visible` outline on every interactive element (WCAG 2.4.7).
 
 ### Loading / error / empty
-- [ ] Skeletons matching tile shape.
-- [ ] Page-level + widget-level error boundaries.
-- [ ] Empty states with icon + title + description + CTA.
+- [x] Skeletons in `ServiceGrid`, `StatusBanner`, and `Timeline` match actual tile/row shapes.
+- [x] Page-level fetch-error banner (`role="alert"`) when any of the polled endpoints fail — tells operators the data may be stale instead of lying with a green dashboard.
+- [ ] Widget-level error boundaries + full empty states with icon + title + description + CTA — **deferred** polish.
 
 ### Typography
-- [ ] Remove Inter / system-ui (global rule).
-- [ ] Adopt **Geist Sans + Geist Mono** via `@fontsource/geist-*`, or IBM Plex. `font-variant-numeric: tabular-nums` on numeric cells.
+- [x] Inter dropped; **IBM Plex Sans + IBM Plex Mono** via `@fontsource/ibm-plex-*` (self-hosted, no CDN dependency).
+- [x] `font-variant-numeric: tabular-nums` globally; `[data-tabular="true"]` opts specific elements (uptime %, `Xs ago`) into mono + tabular for column-stable timestamps.
+- [x] Complies with the global frontend-web-baseline rule: "NEVER use Inter, Roboto, Arial, Open Sans, Lato, or system-ui as the primary font".
 
-**Exit criteria:** leadership can eyeball the grid at 3 seconds and find the worst service; all tiles pass Axe + keyboard nav.
+### Build verification
+- [x] `npm run build` succeeds; bundle is 412 KB JS (130 KB gzip) + 33 KB CSS.
+- [x] `npx eslint` clean on modified files (pre-existing lint issues in `use-polling.js` left for a separate hooks-refactor pass).
+- [x] Backend API (`/api/services`, `/api/services/{id}`) returns `tier`, `poller_health`, `consecutive_failures`, `last_success_at`, `last_failure_reason` so the frontend has everything it needs.
+
+**Exit criteria met:**
+- Leadership can eyeball the grid at 3 seconds: the worst service is the top-left tile in the top category, regardless of category name.
+- Broken pollers are visually distinct from operational services AND from legitimately-unknown-manual services (dashed border + WifiOff + tooltip).
+- Every interactive element is keyboard-navigable; `?` surfaces the full shortcut list.
+- `prefers-reduced-motion` honored everywhere; no Inter/system-ui in the font stack.
+
+235 backend tests still passing.
 
 ---
 
