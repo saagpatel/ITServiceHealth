@@ -11,7 +11,9 @@ Internal web dashboard that aggregates real-time health status of ~30 SaaS servi
 All new sessions must read PRODUCTION-ROADMAP.md before proposing work.
 
 ## Current Phase
-**Phase 0 — Stop the bleeding.** Critical correctness, security, and config-validation fixes from the deep audit. See PRODUCTION-ROADMAP.md § Phase 0 for the full checklist.
+**v2 SHIPPED — Phases 0 through 6 complete.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. 240 tests passing. The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
+
+**Phase 7 is open but optional** — inbound Statuspage webhooks, postmortem automation, SLO views, multi-burn-rate alerting, Slack slash-command bot. Tackle these as demand emerges rather than on a schedule.
 
 ## Tech Stack
 - **Python:** 3.12+

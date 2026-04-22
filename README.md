@@ -5,9 +5,10 @@ Real-time status monitoring dashboard for ~30 SaaS services used by Box IT. Poll
 ## Project status
 
 - **v1 (demo-ready) — SHIPPED.** All original spec delivered: polling, normalization, change detection, Slack alerting, React UI, dependency graph, timeline, SLA tracking, incident clustering, auto reports.
-- **v2 (production-ready) — IN PROGRESS.** Hardening the tool so a mature IT team can rely on it: auth, resilience, alert hygiene, observability, accessibility.
+- **v2 (production-ready) — SHIPPED.** Phases 0–6 of the production roadmap complete: bearer-token auth, vendor resilience (stamina + purgatory), alert quality (flap suppression, dedup, tier routing, dependency correlation, maintenance windows), observability (structlog, Prometheus `/metrics`, Sentry, Healthchecks.io dead-man's switch), data lifecycle (production pragmas, retention, Litestream backup), UX productionization (severity-sorted grid, distinct poller-broken state, a11y + keyboard nav), and platform polish (CI, pre-commit, hardened launchd plist, Caddy, Keychain secrets). 240 tests passing.
+- **v2 Phase 7 — optional.** Inbound Statuspage webhooks, postmortem automation, SLO views, multi-burn-rate alerting, Slack slash-command bot. Not on a fixed schedule; add as demand emerges.
 
-**Active roadmap:** [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md) — source of truth for current work.
+**Active roadmap:** [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md) — exit-criteria detail for every phase.
 **Historical spec:** [IMPLEMENTATION-ROADMAP.md](./IMPLEMENTATION-ROADMAP.md) — archived; v1 is complete.
 
 ## Architecture
@@ -127,8 +128,14 @@ Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`, `un
 | `ALERT_MIN_STATE_DURATION_SECONDS` | `600` | Minimum dwell time (seconds) for worsening transitions |
 | `ALERT_DEDUP_WINDOW_SECONDS` | `86400` | Dedup window for repeat alerts on the same dedup key |
 | `DEPENDENCY_CORRELATION_THRESHOLD` | `3` | Min affected dependents before emitting one aggregated upstream alert |
+| `BREAKER_THRESHOLD` | `3` | Consecutive failures before the per-host circuit breaker opens |
+| `BREAKER_TTL_SECONDS` | `300` | How long an open breaker stays open before half-opening |
+| `POLLER_FAILURE_THRESHOLD` | `3` | Consecutive failures before a service's `poller_health` flips to `broken` |
 | `LOG_JSON` | `true` | JSON structured logging vs pretty console |
+| `LOG_FILE` | _(none)_ | Optional path for Python-side file logging (uses `WatchedFileHandler`). Default: stderr |
 | `SENTRY_DSN` | _(none)_ | Enable Sentry error tracking when set |
+| `SENTRY_ENVIRONMENT` | `production` | Environment tag reported to Sentry |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.0` | 0.0–1.0 sample rate for Sentry performance traces |
 | `HEALTHCHECK_PING_URL` | _(none)_ | Healthchecks.io (or similar) URL pinged by the heartbeat job |
 | `HEARTBEAT_INTERVAL_SECONDS` | `30` | How often the heartbeat job marks itself alive |
 | `HEARTBEAT_STALE_AFTER_SECONDS` | `120` | `/healthz` returns 503 past this threshold |
