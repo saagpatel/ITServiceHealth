@@ -11,7 +11,13 @@ Internal web dashboard that aggregates real-time health status of ~30 SaaS servi
 All new sessions must read PRODUCTION-ROADMAP.md before proposing work.
 
 ## Current Phase
-**v2 SHIPPED — Phases 0 through 6 complete.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. 240 tests passing. The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
+**v2 SHIPPED — Phases 0 through 6 complete.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. **248 tests passing.** The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
+
+Main also includes a parallel UX sprint that shipped alongside Phase 5:
+- **Executive / Engineer view toggle** — `ViewContext` gates the grid vs category summary and engineer-only affordances (graph, timeline, shortcuts).
+- **PWA** — `vite-plugin-pwa` registers a service worker with 55-entry precache; `ReloadPrompt` surfaces updates.
+- **`recharts` SLA trend** — the service-detail drawer renders 7/30-day uptime history.
+- **Daily `VACUUM INTO` backup** — `app/backup.py` writes a snapshot at `settings.backup_time_hour`, independent of Litestream.
 
 **Phase 7 is open but optional** — inbound Statuspage webhooks, postmortem automation, SLO views, multi-burn-rate alerting, Slack slash-command bot. Tackle these as demand emerges rather than on a schedule.
 
