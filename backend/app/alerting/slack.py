@@ -7,10 +7,38 @@ Handles rate limiting (1 msg/sec) and batching (>3 changes).
 import asyncio
 import logging
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+RETRY_AFTER_DEFAULT = 2
+RETRY_AFTER_MAX = 60
+
+
+def _parse_retry_after(raw: str | None) -> int:
+    """Parse an HTTP Retry-After header into seconds.
+
+    Accepts integer seconds or HTTP-date format (RFC 7231). Always returns a
+    positive int capped at RETRY_AFTER_MAX so a malicious or misformed header
+    can't stall us for hours.
+    """
+    if not raw:
+        return RETRY_AFTER_DEFAULT
+    raw = raw.strip()
+    try:
+        seconds = int(raw)
+    except ValueError:
+        try:
+            target = parsedate_to_datetime(raw)
+            now = datetime.now(timezone.utc)
+            seconds = int((target - now).total_seconds())
+        except (TypeError, ValueError):
+            return RETRY_AFTER_DEFAULT
+    if seconds <= 0:
+        return RETRY_AFTER_DEFAULT
+    return min(seconds, RETRY_AFTER_MAX)
 
 EMOJI_MAP = {
     "operational": "\u2705",
@@ -158,7 +186,7 @@ async def send_slack_alert(
             return True
 
         if response.status_code == 429:
-            retry_after = int(response.headers.get("Retry-After", "2"))
+            retry_after = _parse_retry_after(response.headers.get("Retry-After"))
             logger.warning("Slack rate limited, retrying in %ds", retry_after)
             await asyncio.sleep(retry_after)
             response = await client.post(

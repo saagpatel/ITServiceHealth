@@ -147,8 +147,15 @@ async def apply_manual_update(
     service_id: str,
     new_status: ServiceStatus,
     detail: str | None,
+    updated_by: str | None = None,
+    reason: str | None = None,
+    client_ip: str | None = None,
 ) -> StatusChange | None:
     """Apply a manual status update through the same change detection path.
+
+    Audit fields (updated_by, reason, client_ip) are written to status_events
+    on status change. The admin API always supplies them; other callers may
+    omit them.
 
     Returns StatusChange if status actually changed, None if same status.
     """
@@ -179,9 +186,13 @@ async def apply_manual_update(
             cursor_ins = await db.execute(
                 """INSERT INTO status_events
                    (service_id, previous_status, new_status, vendor_title,
-                    vendor_detail, source, created_at)
-                   VALUES (?, ?, ?, ?, ?, 'manual', ?)""",
-                (service_id, old_status, new_status.value, None, detail, now),
+                    vendor_detail, source, created_at,
+                    updated_by, reason, client_ip)
+                   VALUES (?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?)""",
+                (
+                    service_id, old_status, new_status.value, None, detail, now,
+                    updated_by, reason, client_ip,
+                ),
             )
             event_id = cursor_ins.lastrowid
             await db.commit()

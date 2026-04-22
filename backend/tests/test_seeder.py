@@ -102,6 +102,53 @@ class TestLoadDependencies:
         deps = load_dependencies()
         assert len(deps["okta"]) >= 10
 
+    def test_cross_validation_accepts_matching_services(self):
+        services = load_services()
+        ids = {s.id for s in services}
+        # Should not raise
+        deps = load_dependencies(known_service_ids=ids)
+        assert "okta" in deps
+
+    def test_cross_validation_rejects_unknown_upstream(self, tmp_path):
+        import yaml
+        bad = tmp_path / "bad_deps.yaml"
+        bad.write_text(yaml.safe_dump({
+            "dependencies": {
+                "ghost_service": [
+                    {"service": "box", "impact": "x", "severity": "high"},
+                ],
+            },
+        }))
+        with pytest.raises(ValueError, match="Unknown upstream service 'ghost_service'"):
+            load_dependencies(path=bad, known_service_ids={"box"})
+
+    def test_cross_validation_rejects_unknown_downstream(self, tmp_path):
+        import yaml
+        bad = tmp_path / "bad_deps.yaml"
+        bad.write_text(yaml.safe_dump({
+            "dependencies": {
+                "okta": [
+                    {"service": "phantom_app", "impact": "x", "severity": "high"},
+                ],
+            },
+        }))
+        with pytest.raises(ValueError, match="Unknown downstream service 'phantom_app'"):
+            load_dependencies(path=bad, known_service_ids={"okta"})
+
+    def test_cross_validation_allows_all_internal_sentinel(self, tmp_path):
+        import yaml
+        good = tmp_path / "deps.yaml"
+        good.write_text(yaml.safe_dump({
+            "dependencies": {
+                "okta": [
+                    {"service": "all_internal", "impact": "x", "severity": "high"},
+                ],
+            },
+        }))
+        # Should not raise even though "all_internal" isn't in the id set
+        deps = load_dependencies(path=good, known_service_ids={"okta"})
+        assert deps["okta"][0].service == "all_internal"
+
 
 class TestSeedDatabase:
     async def test_seed_services(self, db):

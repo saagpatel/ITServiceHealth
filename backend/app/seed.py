@@ -81,8 +81,15 @@ def load_services(path: Path | None = None) -> list[ServiceConfig]:
 
 def load_dependencies(
     path: Path | None = None,
+    known_service_ids: set[str] | None = None,
 ) -> dict[str, list[DependencyTarget]]:
-    """Load and validate dependencies.yaml."""
+    """Load and validate dependencies.yaml.
+
+    If `known_service_ids` is provided, every upstream and every downstream
+    (except the sentinel "all_internal") must appear in that set. Mismatches
+    raise ValueError with every offending edge listed — fail loud rather than
+    silently seeding orphaned edges.
+    """
     yaml_path = path or settings.dependencies_yaml_path
     with open(yaml_path) as f:
         data = yaml.safe_load(f)
@@ -92,6 +99,27 @@ def load_dependencies(
 
     for upstream, targets in raw_deps.items():
         deps[upstream] = [DependencyTarget.model_validate(t) for t in targets]
+
+    if known_service_ids is not None:
+        errors: list[str] = []
+        for upstream, targets in deps.items():
+            if upstream not in known_service_ids:
+                errors.append(
+                    f"  Unknown upstream service '{upstream}' (not in services.yaml)"
+                )
+            for target in targets:
+                if target.service == "all_internal":
+                    continue
+                if target.service not in known_service_ids:
+                    errors.append(
+                        f"  Unknown downstream service '{target.service}' "
+                        f"(referenced by upstream '{upstream}')"
+                    )
+        if errors:
+            raise ValueError(
+                "dependencies.yaml references services not defined in services.yaml:\n"
+                + "\n".join(errors)
+            )
 
     return deps
 
@@ -180,7 +208,7 @@ async def seed_all(clean: bool = False) -> None:
     logger.info("Validated %d services", len(services))
 
     logger.info("Loading dependencies from %s", settings.dependencies_yaml_path)
-    deps = load_dependencies()
+    deps = load_dependencies(known_service_ids={s.id for s in services})
     logger.info("Loaded dependencies for %d upstream services", len(deps))
 
     # Seed database

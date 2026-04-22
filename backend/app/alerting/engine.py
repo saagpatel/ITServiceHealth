@@ -100,7 +100,8 @@ async def process_changes(
             ))
 
     # Send Slack alerts
-    if not alert_data or not settings.slack_webhook_url:
+    webhook_url = settings.slack_webhook_url_str
+    if not alert_data or not webhook_url:
         if alert_data:
             logger.debug("Slack webhook not configured, skipping %d alert(s)", len(alert_data))
         return
@@ -109,7 +110,7 @@ async def process_changes(
         if len(alert_data) > BATCH_THRESHOLD:
             payload = build_batch_slack_alert(alert_data)
             success = await send_slack_alert(
-                settings.slack_webhook_url, payload, client=http_client,
+                webhook_url, payload, client=http_client,
             )
             if success:
                 logger.info("Sent batch Slack alert for %d changes", len(alert_data))
@@ -121,7 +122,7 @@ async def process_changes(
                     await asyncio.sleep(1.0)
                 payload = build_slack_alert(name, old, new, impact, url)
                 success = await send_slack_alert(
-                    settings.slack_webhook_url, payload, client=http_client,
+                    webhook_url, payload, client=http_client,
                 )
                 if success:
                     logger.info("Sent Slack alert for %s", name)

@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
     from app.seed import load_dependencies, load_services, seed_dependencies, seed_services
     services = load_services()
     await seed_services(services)
-    deps = load_dependencies()
+    deps = load_dependencies(known_service_ids={s.id for s in services})
     await seed_dependencies(deps, [s.id for s in services])
 
     # Create shared HTTP client for all pollers
@@ -75,9 +75,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=settings.cors_origins_list,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Accept"],
+    allow_headers=["Content-Type", "Accept", "Authorization"],
 )
 
 # Register routers
