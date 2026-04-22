@@ -8,12 +8,31 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from typing import Any
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
 RETRY_AFTER_DEFAULT = 2
+
+# Imported lazily inside helpers to avoid a circular import at module level.
+# `settings` → nothing in `alerting/`, safe to import here.
+def _ack_enabled() -> bool:
+    """Return True when the Slack ack flow is enabled in config."""
+    from app.config import settings
+    return settings.slack_ack_enabled
+
+
+def _build_ack_button(dedup_key: str) -> dict[str, Any]:
+    """Build a single 'Acknowledge' button element for a Block Kit actions block."""
+    return {
+        "type": "button",
+        "text": {"type": "plain_text", "text": "Acknowledge"},
+        "action_id": "ack_alert",
+        "value": dedup_key,
+        "style": "primary",
+    }
 RETRY_AFTER_MAX = 60
 
 
@@ -61,6 +80,7 @@ def build_slack_alert(
     impact_statement: str,
     status_page_url: str | None,
     mention: str | None = None,
+    dedup_key: str | None = None,
 ) -> dict:
     """Build a Slack Block Kit payload for a single status change.
 
@@ -105,6 +125,14 @@ def build_slack_alert(
                 "url": status_page_url,
                 "action_id": "view_status_page",
             }],
+        })
+
+    # Append Acknowledge button only when the ack flow is enabled and we have
+    # a dedup_key to link the button back to the alert_sent_log row.
+    if dedup_key and _ack_enabled():
+        blocks.append({
+            "type": "actions",
+            "elements": [_build_ack_button(dedup_key)],
         })
 
     blocks.append({"type": "divider"})
@@ -176,6 +204,7 @@ def build_aggregated_upstream_alert(
     dependents: list,                         # list[StatusChange] for affected downstream
     impact_statement: str,
     mention: str | None = None,
+    dedup_key: str | None = None,
 ) -> dict:
     """Render a single Slack message that consolidates an upstream outage
     with all downstream services impacted in the same poll cycle.
@@ -228,6 +257,12 @@ def build_aggregated_upstream_alert(
                 "url": upstream_change.status_page_url,
                 "action_id": "view_upstream_status_page",
             }],
+        })
+
+    if dedup_key and _ack_enabled():
+        blocks.append({
+            "type": "actions",
+            "elements": [_build_ack_button(dedup_key)],
         })
 
     blocks.append({"type": "divider"})

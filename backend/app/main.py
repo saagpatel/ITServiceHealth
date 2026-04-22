@@ -112,14 +112,18 @@ app.add_middleware(
 from app.router_admin import router as admin_router  # noqa: E402
 from app.router_reports import router as reports_router  # noqa: E402
 from app.router_services import router as services_router  # noqa: E402
+from app.router_slack import router as slack_router  # noqa: E402
 from app.router_summary import router as summary_router  # noqa: E402
 from app.router_timeline import router as timeline_router  # noqa: E402
+from app.router_webhooks import router as webhooks_router  # noqa: E402
 
 app.include_router(admin_router)
 app.include_router(services_router)
 app.include_router(timeline_router)
 app.include_router(summary_router)
 app.include_router(reports_router)
+app.include_router(webhooks_router)
+app.include_router(slack_router)
 
 
 @app.get("/healthz")

@@ -146,6 +146,10 @@ Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`, `un
 | `BACKUP_DIR` | `backups` | Directory for the daily `VACUUM INTO` snapshot |
 | `BACKUP_TIME_HOUR` | `2` | UTC hour for the daily snapshot (independent of Litestream) |
 | `BACKUP_RETENTION_DAYS` | `7` | How many daily snapshots to keep |
+| `WEBHOOKS_ENABLED` | `false` | Enable inbound Statuspage subscriber webhooks. Requires public reachability and `STATUSPAGE_WEBHOOK_SECRET`. |
+| `STATUSPAGE_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 shared secret configured in Statuspage → Subscribers → Webhook settings. Required when `WEBHOOKS_ENABLED=true`. |
+| `SLACK_ACK_ENABLED` | `false` | Enable the Slack ack-button flow. Requires public reachability and `SLACK_SIGNING_SECRET`. |
+| `SLACK_SIGNING_SECRET` | _(none)_ | Signing secret from your Slack app's "Basic Information → App Credentials" page. Required when `SLACK_ACK_ENABLED=true`. |
 
 Copy `.env.example` to `.env` and configure:
 ```bash

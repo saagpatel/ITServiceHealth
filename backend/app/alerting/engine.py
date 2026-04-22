@@ -122,7 +122,8 @@ async def process_changes(
 
     # Route every change; suppressed alerts still record to alert_sent_log
     # so operators can audit "why didn't we alert on X?".
-    individual_sends: list[tuple[StatusChange, str]] = []
+    # Tuple: (change, channel_mention, dedup_key)
+    individual_sends: list[tuple[StatusChange, str, str]] = []
     for change in changes:
         is_boot_warmup = (
             change.previous_status == "unknown"
@@ -149,7 +150,7 @@ async def process_changes(
                 decision.suppressed_by,
             )
             continue
-        individual_sends.append((change, decision.channel_mention or ""))
+        individual_sends.append((change, decision.channel_mention or "", decision.dedup_key))
 
     # Build aggregated upstream messages (one per upstream with >= threshold dependents)
     aggregated_payloads: list[tuple[str, dict]] = []
@@ -180,6 +181,7 @@ async def process_changes(
             dependents=dependents,
             impact_statement=impact_by_service.get(upstream_id, ""),
             mention=decision.channel_mention,
+            dedup_key=decision.dedup_key,
         )
         aggregated_payloads.append((decision.webhook_url, payload))
 
@@ -213,7 +215,7 @@ async def process_changes(
                     impact_by_service.get(c.service_id, ""),
                     c.status_page_url,
                 )
-                for c, _mention in individual_sends
+                for c, _mention, _dedup in individual_sends
             ]
             payload = build_batch_slack_alert(alert_data)
             ok = await send_slack_alert(webhook_url, payload, client=http_client)
@@ -222,7 +224,7 @@ async def process_changes(
             else:
                 logger.warning("Failed to send batch Slack alert")
         else:
-            for i, (change, mention) in enumerate(individual_sends):
+            for i, (change, mention, dedup_key) in enumerate(individual_sends):
                 if i > 0:
                     await asyncio.sleep(1.0)
                 payload = build_slack_alert(
@@ -232,6 +234,7 @@ async def process_changes(
                     impact_by_service.get(change.service_id, ""),
                     change.status_page_url,
                     mention=mention or None,
+                    dedup_key=dedup_key,
                 )
                 ok = await send_slack_alert(webhook_url, payload, client=http_client)
                 if ok:

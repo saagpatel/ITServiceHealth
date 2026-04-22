@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import Field, HttpUrl, field_validator
+from pydantic import Field, HttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +29,18 @@ class Settings(BaseSettings):
     backup_dir: str = "backups"
     backup_time_hour: int = 2  # UTC hour for daily backup
     backup_retention_days: int = 7
+
+    # Phase 7 — Inbound Statuspage webhooks
+    # Feature-gated off by default; set WEBHOOKS_ENABLED=true + a shared secret
+    # that matches what you configured in Statuspage subscriber settings.
+    webhooks_enabled: bool = False
+    statuspage_webhook_secret: SecretStr | None = None
+
+    # Phase 2B — Slack ack flow
+    # Feature-gated off by default; set SLACK_ACK_ENABLED=true + the signing
+    # secret from your Slack app's "Basic Information → App Credentials" page.
+    slack_ack_enabled: bool = False
+    slack_signing_secret: SecretStr | None = None
 
     # Admin write endpoints require this token in the Authorization header.
     # If unset, admin endpoints refuse all requests (fail closed).
