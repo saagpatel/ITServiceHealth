@@ -32,8 +32,23 @@ def start_scheduler(app) -> None:
         misfire_grace_time=30,
         next_run_time=datetime.now(timezone.utc),
     )
+    # Daily database backup
+    from app.backup import run_backup
+
+    scheduler.add_job(
+        run_backup,
+        "cron",
+        hour=settings.backup_time_hour,
+        minute=0,
+        id="daily_backup",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
     scheduler.start()
     logger.info("Poll scheduler started (interval=%ds)", settings.poll_interval_seconds)
+    logger.info("Daily backup scheduled at %02d:00 UTC", settings.backup_time_hour)
 
 
 def stop_scheduler() -> None:

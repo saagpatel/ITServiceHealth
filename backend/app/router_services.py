@@ -142,6 +142,90 @@ async def get_services_sla() -> dict:
     }
 
 
+@router.get("/services/sla/history")
+async def get_sla_history(days: int = 30) -> dict:
+    """Get daily uptime percentages for each service over N days."""
+    db = await get_db()
+    days = max(1, min(days, 90))
+
+    # Fetch all status intervals in the window
+    cursor = await db.execute(
+        """SELECT service_id, new_status as status,
+                  created_at as started,
+                  LEAD(created_at) OVER (PARTITION BY service_id ORDER BY created_at) as ended
+           FROM status_events
+           WHERE created_at >= datetime('now', ? || ' days')
+             AND NOT (previous_status = 'unknown' AND new_status = 'operational')
+           ORDER BY service_id, created_at""",
+        (f"-{days}",),
+    )
+    rows = await cursor.fetchall()
+
+    # Generate day list
+    now = datetime.now(timezone.utc)
+    day_list = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days - 1, -1, -1)]
+
+    # Compute daily uptime in Python (handles cross-day boundary splitting)
+    # Accumulate per (service_id, day) → (operational_seconds, tracked_seconds)
+    from collections import defaultdict
+
+    daily: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(lambda: [0.0, 0.0]))
+
+    for row in rows:
+        sid = row[0]
+        status = row[1]
+        started_str = row[2]
+        ended_str = row[3]
+
+        if status == "unknown":
+            continue
+
+        try:
+            start_dt = datetime.fromisoformat(started_str.replace("Z", "+00:00"))
+            end_dt = (
+                datetime.fromisoformat(ended_str.replace("Z", "+00:00"))
+                if ended_str
+                else now.replace(tzinfo=timezone.utc) if now.tzinfo else now
+            )
+        except (ValueError, TypeError):
+            continue
+
+        # Split interval across calendar days
+        current = start_dt
+        while current < end_dt:
+            day_key = current.strftime("%Y-%m-%d")
+            next_day = (current.replace(hour=0, minute=0, second=0, microsecond=0)
+                        + timedelta(days=1))
+            segment_end = min(end_dt, next_day)
+            seconds = (segment_end - current).total_seconds()
+
+            if seconds > 0:
+                daily[sid][day_key][1] += seconds  # tracked
+                if status == "operational":
+                    daily[sid][day_key][0] += seconds  # operational
+
+            current = next_day
+
+    # Build response
+    services_data: dict[str, list[dict]] = {}
+    for sid, day_map in daily.items():
+        points = []
+        for day in day_list:
+            operational, tracked = day_map.get(day, [0.0, 0.0])
+            if tracked > 0:
+                pct = round(min((operational / tracked) * 100, 100.0), 2)
+            else:
+                pct = None
+            points.append({"date": day, "uptime": pct})
+        services_data[sid] = points
+
+    return {
+        "data": {"days": day_list, "services": services_data},
+        "error": None,
+        "meta": {"days_requested": days},
+    }
+
+
 @router.get("/services/graph")
 async def get_service_graph() -> dict:
     """Get service dependency graph in node/link format for visualization."""

@@ -1,14 +1,14 @@
 import { CATEGORY_ORDER, STATUS_COLORS, STATUS_ICONS } from "../lib/constants";
 import ServiceTile from "./ServiceTile";
 
-export default function ServiceGrid({ services, slaData, selectedId, onSelect }) {
+export default function ServiceGrid({ services, slaData, onSelect }) {
   if (!services?.services) {
     return (
       <div className="space-y-6">
         {[...Array(4)].map((_, i) => (
           <div key={i}>
             <div className="h-3 w-36 bg-bg-surface rounded animate-pulse mb-3" />
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {[...Array(4)].map((_, j) => (
                 <div key={j} className="h-[72px] bg-bg-surface rounded-lg animate-pulse" />
               ))}
@@ -70,7 +70,7 @@ export default function ServiceGrid({ services, slaData, selectedId, onSelect })
                 <span>{rollupIcon}</span> {rollupText}
               </span>
             </div>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {sorted.map((svc) => (
                 <ServiceTile
                   key={svc.id}
