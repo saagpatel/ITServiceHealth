@@ -224,6 +224,18 @@ FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend" / "dist"
 if FRONTEND_DIR.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="static-assets")
 
+    @app.get("/sw.js")
+    async def serve_sw():
+        """Serve service worker with no-cache headers for immediate update detection."""
+        sw_path = FRONTEND_DIR / "sw.js"
+        if sw_path.is_file():
+            return FileResponse(
+                sw_path,
+                media_type="application/javascript",
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
+        return FileResponse(FRONTEND_DIR / "index.html")
+
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         """SPA catch-all: serve index.html for all non-API routes."""

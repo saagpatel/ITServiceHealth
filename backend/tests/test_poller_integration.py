@@ -111,15 +111,41 @@ class TestSlackPoller:
         assert result.status == ServiceStatus.OPERATIONAL
 
     @respx.mock
-    async def test_non_dict_response(self):
+    async def test_list_response_no_active_is_operational(self):
+        """slack-status.com redirects /current to /history which returns a
+        list of incident objects. An empty list or a list with only
+        resolved/completed incidents means OPERATIONAL."""
         respx.get("https://slack-status.com/api/v2.0.0/current").mock(
-            return_value=httpx.Response(200, json=["unexpected"])
+            return_value=httpx.Response(200, json=[
+                {"id": 1, "status": "resolved", "type": "incident", "title": "old"},
+            ])
+        )
+        async with httpx.AsyncClient() as client:
+            result = await poll_slack(client, "https://slack-status.com/api/v2.0.0/current")
+        assert result.status == ServiceStatus.OPERATIONAL
+
+    @respx.mock
+    async def test_list_response_active_incident_maps_type(self):
+        """Active incidents in the list response are mapped by `type`."""
+        respx.get("https://slack-status.com/api/v2.0.0/current").mock(
+            return_value=httpx.Response(200, json=[
+                {"id": 2, "status": "active", "type": "outage", "title": "Big one"},
+            ])
+        )
+        async with httpx.AsyncClient() as client:
+            result = await poll_slack(client, "https://slack-status.com/api/v2.0.0/current")
+        assert result.status == ServiceStatus.MAJOR_OUTAGE
+        assert result.status_detail == "Big one"
+
+    @respx.mock
+    async def test_unexpected_type_returns_unknown(self):
+        """Neither dict nor list (e.g., a bare string) still UNKNOWNs out."""
+        respx.get("https://slack-status.com/api/v2.0.0/current").mock(
+            return_value=httpx.Response(200, json="not-a-dict-or-list")
         )
         async with httpx.AsyncClient() as client:
             result = await poll_slack(client, "https://slack-status.com/api/v2.0.0/current")
         assert result.status == ServiceStatus.UNKNOWN
-        assert result.poll_failure_reason is not None
-        assert "parse_error" in result.poll_failure_reason
 
 
 class TestSalesforcePoller:

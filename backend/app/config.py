@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # newsyslog rotation (rename + create of a new inode).
     log_file: str | None = None
     seed_demo_data: bool = False
+    backup_dir: str = "backups"
+    backup_time_hour: int = 2  # UTC hour for daily backup
+    backup_retention_days: int = 7
 
     # Admin write endpoints require this token in the Authorization header.
     # If unset, admin endpoints refuse all requests (fail closed).

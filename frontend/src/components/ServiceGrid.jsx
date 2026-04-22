@@ -22,6 +22,8 @@ import ServiceTile from "./ServiceTile";
  *     about pop above "operational" in the sort.
  *   - The grid exposes `role="grid"` + roving tabindex so keyboard users
  *     can walk it with j/k or arrow keys.
+ *   - Responsive columns (mobile/tablet/desktop) merged from the
+ *     phase-2-sprint PWA track.
  */
 export default function ServiceGrid({ services, slaData, onSelect }) {
   const gridRef = useRef(null);
@@ -33,7 +35,7 @@ export default function ServiceGrid({ services, slaData, onSelect }) {
         {[...Array(4)].map((_, i) => (
           <div key={i}>
             <div className="h-3 w-36 bg-bg-surface rounded animate-pulse mb-3" />
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2" role="row">
               {[...Array(4)].map((_, j) => (
                 <div
                   key={j}
@@ -163,7 +165,7 @@ export default function ServiceGrid({ services, slaData, onSelect }) {
                 <RollupIcon size={12} strokeWidth={2.5} /> {rollupText}
               </span>
             </div>
-            <div className="grid grid-cols-4 gap-2" role="row">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2" role="row">
               {sorted.map((svc) => (
                 <ServiceTile
                   key={svc.id}

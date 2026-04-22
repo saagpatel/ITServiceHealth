@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { AlertTriangle, Network } from "lucide-react";
+import { Network } from "lucide-react";
 import { usePolling } from "./hooks/use-polling";
 import {
   POLL_INTERVAL_MS,
@@ -7,16 +7,30 @@ import {
   STALE_WARNING_MS,
   STALE_CRITICAL_MS,
 } from "./lib/constants";
+import { ViewProvider, useView } from "./contexts/ViewContext";
 import StatusBanner from "./components/StatusBanner";
 import IncidentSection from "./components/IncidentSection";
 import MaintenanceBanner from "./components/MaintenanceBanner";
 import ServiceGrid from "./components/ServiceGrid";
+import CategorySummary from "./components/CategorySummary";
 import Timeline from "./components/Timeline";
 import ServiceDetail from "./components/ServiceDetail";
 import DependencyGraph from "./components/DependencyGraph";
 import ShortcutsOverlay from "./components/ShortcutsOverlay";
+import ErrorBanner from "./components/ErrorBanner";
+import ViewToggle from "./components/ViewToggle";
+import ReloadPrompt from "./components/ReloadPrompt";
 
 export default function App() {
+  return (
+    <ViewProvider>
+      <AppContent />
+    </ViewProvider>
+  );
+}
+
+function AppContent() {
+  const { view } = useView();
   const [selectedServiceId, setSelectedServiceId] = useState(null);
   const [showGraph, setShowGraph] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -33,15 +47,14 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Global keyboard shortcuts
+  // Global keyboard shortcuts (Phase 5)
   useEffect(() => {
     const onKey = (e) => {
-      // Ignore when typing into an input or when any modal is open
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
       if (e.key === "?" && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setShowShortcuts((s) => !s);
-      } else if (e.key === "g" && !e.metaKey && !e.ctrlKey) {
+      } else if (e.key === "g" && !e.metaKey && !e.ctrlKey && view === "engineer") {
         setShowGraph((s) => !s);
         e.preventDefault();
       } else if (e.key === "Escape") {
@@ -52,7 +65,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedServiceId, showGraph, showShortcuts]);
+  }, [selectedServiceId, showGraph, showShortcuts, view]);
 
   // staleTick re-renders each second so this "now" reading stays fresh.
   // eslint-disable-next-line react-hooks/purity
@@ -65,13 +78,6 @@ export default function App() {
     staleClass = "text-status-major";
   else if (lastPollAge !== null && lastPollAge * 1000 > STALE_WARNING_MS)
     staleClass = "text-status-degraded";
-
-  // Any of our polled endpoints failing tells the user "the data you're
-  // seeing might not be fresh" even when the backend itself is fine.
-  const fetchErrors = [summary.error, services.error, timeline.error].filter(
-    Boolean,
-  );
-  const hasFetchError = fetchErrors.length > 0;
 
   // Derive an aria-live summary of headline state so screen readers get
   // updates without being spammed per-tile. Only the high-level summary
@@ -99,23 +105,26 @@ export default function App() {
         {liveSummary}
       </div>
 
-      <div className="max-w-5xl mx-auto px-8 py-8 space-y-5">
+      <div className="max-w-5xl mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold text-text-primary">Pulse</h1>
             <p className="text-xs text-text-muted mt-0.5">IT Service Health</p>
           </div>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setShowGraph(true)}
-              className="text-xs text-text-secondary hover:text-text-primary transition-colors cursor-pointer
-                         flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-white/5"
-              aria-label="Show dependency graph (g)"
-            >
-              <Network size={14} strokeWidth={2} />
-              Dependencies
-            </button>
+          <div className="flex items-center gap-3">
+            <ViewToggle />
+            {view === "engineer" && (
+              <button
+                onClick={() => setShowGraph(true)}
+                className="text-xs text-text-secondary hover:text-text-primary transition-colors cursor-pointer
+                           flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-white/5"
+                aria-label="Show dependency graph (g)"
+              >
+                <Network size={14} strokeWidth={2} />
+                Dependencies
+              </button>
+            )}
             <button
               onClick={() => setShowShortcuts(true)}
               className="text-xs text-text-muted hover:text-text-primary transition-colors
@@ -132,33 +141,11 @@ export default function App() {
         </div>
 
         {/* Fetch-error banner — the app itself is talking to a broken backend */}
-        {hasFetchError && (
-          <div
-            role="alert"
-            className="rounded-lg bg-status-major/10 border border-status-major/40 px-4 py-3
-                       flex items-start gap-3"
-          >
-            <AlertTriangle
-              size={18}
-              strokeWidth={2.5}
-              className="text-status-major shrink-0 mt-0.5"
-            />
-            <div className="flex-1">
-              <div className="text-sm font-medium text-status-major">
-                Dashboard is having trouble reaching the backend
-              </div>
-              <div className="text-xs text-text-secondary mt-0.5">
-                Data on this page may be stale. Automatically retrying every{" "}
-                {POLL_INTERVAL_MS / 1000}s.
-                {fetchErrors[0]?.message && (
-                  <span className="block mt-1 font-mono opacity-75">
-                    {fetchErrors[0].message}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        <ErrorBanner polls={[
+          { ...summary, label: "summary" },
+          { ...services, label: "services" },
+          { ...timeline, label: "timeline" },
+        ]} />
 
         {/* Status Banner */}
         <StatusBanner data={summary.data} loading={summary.loading} />
@@ -166,19 +153,24 @@ export default function App() {
         {/* Active Incidents */}
         <IncidentSection incidents={summary.data?.active_incidents} />
 
-        {/* Service Grid */}
-        <ServiceGrid
-          services={services.data}
-          slaData={sla.data}
-          selectedId={selectedServiceId}
-          onSelect={setSelectedServiceId}
-        />
+        {/* Service Grid (Engineer) or Category Summary (Executive) */}
+        {view === "engineer" ? (
+          <ServiceGrid
+            services={services.data}
+            slaData={sla.data}
+            onSelect={setSelectedServiceId}
+          />
+        ) : (
+          <CategorySummary services={services.data} slaData={sla.data} />
+        )}
 
         {/* Maintenance */}
         <MaintenanceBanner data={summary.data} />
 
-        {/* Timeline */}
-        <Timeline data={timeline.data} loading={timeline.loading} />
+        {/* Timeline (Engineer only) */}
+        {view === "engineer" && (
+          <Timeline data={timeline.data} loading={timeline.loading} />
+        )}
 
         {/* Footer */}
         <div className="border-t border-border pt-4 pb-8 text-center">
@@ -194,8 +186,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* Dependency Graph Overlay */}
-      {showGraph && (
+      {/* Dependency Graph Overlay (Engineer only) */}
+      {view === "engineer" && showGraph && (
         <DependencyGraph
           onSelectService={(id) => {
             setSelectedServiceId(id);
@@ -205,8 +197,8 @@ export default function App() {
         />
       )}
 
-      {/* Service Detail Panel */}
-      {selectedServiceId && (
+      {/* Service Detail Panel (Engineer only) */}
+      {view === "engineer" && selectedServiceId && (
         <ServiceDetail
           serviceId={selectedServiceId}
           uptimeData={uptime.data}
@@ -219,6 +211,9 @@ export default function App() {
       {showShortcuts && (
         <ShortcutsOverlay onClose={() => setShowShortcuts(false)} />
       )}
+
+      {/* PWA Update Prompt */}
+      <ReloadPrompt />
     </div>
   );
 }

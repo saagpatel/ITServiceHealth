@@ -115,13 +115,30 @@ def start_scheduler(app) -> None:
         replace_existing=True,
     )
 
+    # Daily SQLite VACUUM INTO backup — independent of Litestream, kept
+    # as a belt-and-suspenders snapshot for operators who don't want to
+    # set up Litestream's continuous WAL shipping.
+    from app.backup import run_backup
+    scheduler.add_job(
+        run_backup,
+        "cron",
+        hour=settings.backup_time_hour,
+        minute=0,
+        id="daily_backup",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
     scheduler.start()
     logger.info(
-        "Poll scheduler started (poll=%ds, heartbeat=%ds, checkpoint=%dh, retention=%dh)",
+        "Poll scheduler started (poll=%ds, heartbeat=%ds, checkpoint=%dh, "
+        "retention=%dh, backup=%02d:00 UTC)",
         settings.poll_interval_seconds,
         settings.heartbeat_interval_seconds,
         settings.wal_checkpoint_interval_hours,
         settings.retention_interval_hours,
+        settings.backup_time_hour,
     )
 
 

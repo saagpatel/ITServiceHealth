@@ -130,8 +130,14 @@ async def resilient_fetch(
     *,
     attempts: int = DEFAULT_RETRY_ATTEMPTS,
     timeout: float = DEFAULT_RETRY_TIMEOUT,
+    headers: dict[str, str] | None = None,
 ) -> httpx.Response:
     """GET `url` with retries and a per-host circuit breaker.
+
+    `headers` forwards through to ``client.get`` so pollers that need
+    vendor-specific headers (e.g., ``Accept: application/json`` for
+    Slack's redirect-happy status host) can pass them without
+    bypassing the resilience layer.
 
     Raises:
         CircuitBreakerOpen: host's breaker is tripped; caller should treat
@@ -153,7 +159,7 @@ async def resilient_fetch(
         wait_jitter=DEFAULT_RETRY_WAIT_JITTER,
     )
     async def _do_fetch() -> httpx.Response:
-        response = await client.get(url)
+        response = await client.get(url, headers=headers)
         if response.status_code in TRANSIENT_HTTP_CODES:
             raise TransientHTTPError(response.status_code, url)
         response.raise_for_status()
