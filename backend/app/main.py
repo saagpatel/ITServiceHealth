@@ -61,7 +61,6 @@ async def lifespan(app: FastAPI):
         limits=httpx.Limits(
             max_connections=20,
             max_keepalive_connections=10,
-            max_connections_per_host=1,
             keepalive_expiry=30.0,
         ),
     )
