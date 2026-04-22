@@ -5,7 +5,7 @@ Real-time status monitoring dashboard for ~30 SaaS services used by Box IT. Poll
 ## Project status
 
 - **v1 (demo-ready) — SHIPPED.** All original spec delivered: polling, normalization, change detection, Slack alerting, React UI, dependency graph, timeline, SLA tracking, incident clustering, auto reports.
-- **v2 (production-ready) — SHIPPED.** Phases 0–6 of the production roadmap complete: bearer-token auth, vendor resilience (stamina + purgatory), alert quality (flap suppression, dedup, tier routing, dependency correlation, maintenance windows), observability (structlog, Prometheus `/metrics`, Sentry, Healthchecks.io dead-man's switch), data lifecycle (production pragmas, retention, Litestream backup), UX productionization (severity-sorted grid, distinct poller-broken state, a11y + keyboard nav), and platform polish (CI, pre-commit, hardened launchd plist, Caddy, Keychain secrets). 240 tests passing.
+- **v2 (production-ready) — SHIPPED.** Phases 0–6 of the production roadmap complete: bearer-token auth, vendor resilience (stamina + purgatory), alert quality (flap suppression, dedup, tier routing, dependency correlation, maintenance windows), observability (structlog, Prometheus `/metrics`, Sentry, Healthchecks.io dead-man's switch), data lifecycle (production pragmas, retention, Litestream streaming + daily `VACUUM INTO` snapshot), UX productionization (severity-sorted grid, distinct poller-broken state, a11y + keyboard nav, Executive/Engineer view toggle, PWA, `recharts` SLA trend), and platform polish (CI, pre-commit, hardened launchd plist, Caddy, Keychain secrets). **248 tests passing.**
 - **v2 Phase 7 — optional.** Inbound Statuspage webhooks, postmortem automation, SLO views, multi-burn-rate alerting, Slack slash-command bot. Not on a fixed schedule; add as demand emerges.
 
 **Active roadmap:** [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md) — exit-criteria detail for every phase.
@@ -143,6 +143,9 @@ Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`, `un
 | `RETENTION_DAYS_ALERT_SENT_LOG` | `90` | Auto-purge `alert_sent_log` rows older than this (0 = disable) |
 | `RETENTION_INTERVAL_HOURS` | `168` | How often the retention job runs |
 | `WAL_CHECKPOINT_INTERVAL_HOURS` | `24` | How often the truncating WAL checkpoint runs |
+| `BACKUP_DIR` | `backups` | Directory for the daily `VACUUM INTO` snapshot |
+| `BACKUP_TIME_HOUR` | `2` | UTC hour for the daily snapshot (independent of Litestream) |
+| `BACKUP_RETENTION_DAYS` | `7` | How many daily snapshots to keep |
 
 Copy `.env.example` to `.env` and configure:
 ```bash
