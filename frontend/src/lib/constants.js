@@ -1,4 +1,5 @@
 import {
+  Activity,
   CheckCircle2,
   AlertTriangle,
   AlertOctagon,
@@ -55,6 +56,10 @@ export const STATUS_ICON_COMPONENTS = {
 // Icon for the poller-is-broken variant of "unknown" — tells the operator
 // "we can't reach the vendor" rather than "the vendor hasn't told us yet".
 export const POLLER_BROKEN_ICON = WifiOff;
+
+// Icon for the mid-flap "unstable" badge — signals the pending state machine
+// is accumulating polls toward a status change, but hasn't confirmed it yet.
+export const FLAPPING_ICON = Activity;
 
 // Kept for places we still want a one-char inline marker (e.g., chips).
 export const STATUS_ICONS = {
@@ -122,4 +127,17 @@ export function effectiveStatus(service) {
 /** Is this service in the "we can't reach the vendor" state? */
 export function isPollerBroken(service) {
   return service?.poller_health === "broken";
+}
+
+/** Is this service mid-flap — pending a status change that hasn't been confirmed yet?
+ *
+ * Returns true when the backend's pending-state buffer has accumulated at least
+ * one poll pointing at a *different* status than the committed current_status.
+ * The badge reuses STATUS_COLORS.degraded (yellow) because yellow already means
+ * "watch this" in our palette, and adding a new colour token would weaken the
+ * signal hierarchy. */
+export function isFlapping(service) {
+  return Boolean(
+    service?.pending_status && service.pending_status !== service.current_status,
+  );
 }

@@ -20,7 +20,7 @@ async def list_services(category: str | None = None) -> dict:
             """SELECT id, display_name, category, current_status, current_status_detail,
                       poll_type, status_page_url, last_polled_at, last_status_change_at,
                       consecutive_failures, last_success_at, last_failure_reason, poller_health,
-                      tier
+                      tier, pending_status, pending_status_count, pending_status_since
                FROM services WHERE category = ? ORDER BY category, display_name""",
             (category,),
         )
@@ -29,7 +29,7 @@ async def list_services(category: str | None = None) -> dict:
             """SELECT id, display_name, category, current_status, current_status_detail,
                       poll_type, status_page_url, last_polled_at, last_status_change_at,
                       consecutive_failures, last_success_at, last_failure_reason, poller_health,
-                      tier
+                      tier, pending_status, pending_status_count, pending_status_since
                FROM services ORDER BY category, display_name"""
         )
 
@@ -276,7 +276,8 @@ async def get_service_detail(service_id: str) -> dict:
 
     cursor = await db.execute(
         """SELECT id, display_name, category, current_status, current_status_detail,
-                  poll_type, status_page_url, last_polled_at, last_status_change_at
+                  poll_type, status_page_url, last_polled_at, last_status_change_at,
+                  pending_status, pending_status_count, pending_status_since
            FROM services WHERE id = ?""",
         (service_id,),
     )

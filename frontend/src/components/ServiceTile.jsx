@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  FLAPPING_ICON,
   POLLER_BROKEN_ICON,
   POLLER_HEALTH_LABELS,
   STATUS_COLORS,
@@ -8,6 +9,7 @@ import {
   STATUS_TINTS,
   STATUS_TINTS_HOVER,
   effectiveStatus,
+  isFlapping,
   isPollerBroken,
 } from "../lib/constants";
 
@@ -38,6 +40,10 @@ export default function ServiceTile({
   const isUnmonitored =
     isManual && service.current_status === "unknown" && !pollerBroken;
 
+  // Flapping: mid-flap only shows when the poller isn't broken (broken
+  // already dominates the tile and conveys more urgency than "unstable").
+  const flapping = !pollerBroken && isFlapping(service);
+
   const status = effectiveStatus(service);
   const color = STATUS_COLORS[status] || STATUS_COLORS.unknown;
 
@@ -63,7 +69,7 @@ export default function ServiceTile({
     status !== "unknown" &&
     !isUnmonitored;
 
-  // Uptime badge color
+  // Uptime badge — hidden when flapping so both badges don't fight for space.
   let uptimeColor = "#64748b";
   if (uptimePercent !== null && uptimePercent !== undefined) {
     if (uptimePercent >= 99.9) uptimeColor = STATUS_COLORS.operational;
@@ -71,14 +77,29 @@ export default function ServiceTile({
     else uptimeColor = STATUS_COLORS.major_outage;
   }
 
+  // Flapping badge content
+  const pendingLabel = flapping
+    ? STATUS_LABELS[service.pending_status] || service.pending_status
+    : null;
+  const pendingCount = service.pending_status_count ?? 0;
+  const flappingTooltip = flapping
+    ? `Unstable: ${pendingCount} poll${pendingCount !== 1 ? "s" : ""} at ${pendingLabel}`
+    : null;
+
   const tooltip = pollerBroken
     ? `${POLLER_HEALTH_LABELS.broken}${
         service.last_failure_reason ? `\n${service.last_failure_reason}` : ""
       }`
+    : flapping
+    ? flappingTooltip
     : service.current_status_detail || label;
 
   const ariaLabel = pollerBroken
     ? `${service.display_name}: ${POLLER_HEALTH_LABELS.broken}`
+    : flapping
+    ? `${service.display_name}: ${label}${
+        service.current_status_detail ? `, ${service.current_status_detail}` : ""
+      }, currently unstable, pending ${pendingLabel}`
     : `${service.display_name}: ${label}${
         service.current_status_detail ? `, ${service.current_status_detail}` : ""
       }`;
@@ -111,14 +132,27 @@ export default function ServiceTile({
         >
           <StatusIcon size={14} strokeWidth={2.5} />
         </span>
-        {uptimePercent !== null && uptimePercent !== undefined && (
+        {flapping ? (
           <span
-            className="text-[10px] font-medium"
-            style={{ color: uptimeColor }}
+            className="inline-flex items-center gap-0.5 text-[10px] font-medium motion-safe:animate-pulse"
+            style={{ color: STATUS_COLORS.degraded }}
+            aria-label={`pending ${pendingLabel}`}
+            title={flappingTooltip}
             data-tabular="true"
           >
-            {uptimePercent.toFixed(1)}%
+            <FLAPPING_ICON size={10} strokeWidth={2.5} />
+            {`→\u00A0${pendingLabel}`}
           </span>
+        ) : (
+          uptimePercent !== null && uptimePercent !== undefined && (
+            <span
+              className="text-[10px] font-medium"
+              style={{ color: uptimeColor }}
+              data-tabular="true"
+            >
+              {uptimePercent.toFixed(1)}%
+            </span>
+          )
         )}
       </div>
       <div className="text-[13px] font-medium text-text-primary truncate mt-0.5">
