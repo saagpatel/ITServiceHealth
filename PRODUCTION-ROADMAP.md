@@ -1,0 +1,321 @@
+# IT Service Health Dashboard — Production Roadmap
+
+> **This is the active roadmap.** It supersedes `IMPLEMENTATION-ROADMAP.md` (which documents the v1 build that is already complete). All new work tracks against the phases below.
+
+## Status
+
+- **v1 (demo) — SHIPPED.** Polling, normalization, change detection, Slack alerting, React UI, dependency graph, timeline, SLA tracking, incident clustering, auto reports — all implemented and running. See `IMPLEMENTATION-ROADMAP.md` for the historical spec.
+- **v2 (production-ready) — IN PROGRESS.** Moving the tool from "demo-ready" to something a mature IT team can rely on. Phase 0 active.
+
+## Guiding principle
+
+The jump from demo to production isn't about features — it's about **honesty under failure**. A mature status dashboard:
+- Knows when it is blind and says so (never renders `operational` when the poller is broken).
+- Doesn't page on vendor flaps (consecutive-threshold, minimum state duration, dedup by vendor incident ID).
+- Surfaces its own health alongside the services it watches (self-monitoring, dead-man's switch).
+- Is trusted by leadership (severity-sorted, accessible, clearly labeled stale data).
+
+Sources: Google SRE Workbook (Alerting on SLOs, Postmortem Culture, On-Call), Atlassian Statuspage developer docs, hynek/stamina, mardiros/purgatory, Litestream, Gatus, Datadog / Grafana / PagerDuty / incident.io engineering blogs.
+
+---
+
+## Phase 0 — Stop the bleeding (week 1) — COMPLETE
+
+Critical correctness, security, and validation fixes found in the deep code audit. No feature work — only surgical fixes.
+
+### Security & auth
+- [x] `backend/app/router_admin.py` — Bearer-token auth on `POST /api/admin/status`. Token from `ADMIN_API_TOKEN` env var. 401 on missing, 403 on mismatch, 503 when unset (fail closed).
+- [x] Admin request body — Pydantic model with `ServiceStatus` enum field; `reason` required (3–500 chars).
+- [x] Validate `service_id` exists in DB before status insert (404 if not found). _(already present pre-Phase 0)_
+- [x] Audit fields on `status_events` (migration 0004): `updated_by`, `reason`, `client_ip`. Written on manual updates.
+- [x] `backend/app/main.py:24` — CORS origins from `CORS_ORIGINS` env var (CSV), not hardcoded `localhost:5173`.
+
+### Correctness bugs (from audit, verified against real code)
+
+Several audit claims were false positives on verification — noted here so future sessions don't re-litigate:
+
+- ~~`change_detector.py:82` missing commit on UNKNOWN~~ — FALSE POSITIVE. Batched `db.commit()` at line 139 covers all paths inside the write_lock.
+- ~~`change_detector.py:132` detail update without timestamp~~ — FALSE POSITIVE. `last_status_change_at` correctly tracks status (enum) changes, not detail text changes.
+- ~~`reports.py:71` inverted recovery logic~~ — FALSE POSITIVE. Walks events DESC looking for a recovery (`new_status == operational` excluding boot warmup), then includes predecessor events. Logic is correct.
+- ~~`alerting/engine.py:64` nested SELECT without LIMIT~~ — FALSE POSITIVE. `ORDER BY created_at DESC LIMIT 1` is already present.
+- ~~`dependencies/graph.py` cycle detection~~ — FALSE POSITIVE. `get_downstream`/`get_upstream` do single SQL queries, not recursion. Revisit if recursive traversal is added later.
+
+**Real fixes to apply in Phase 0:**
+- [x] `backend/app/alerting/slack.py` — Hardened `Retry-After` parsing via `_parse_retry_after`: handles int, HTTP-date (RFC 7231), negative/zero/garbage values; capped at 60s max.
+
+### Config validation at startup (fail fast)
+- [x] `backend/app/config.py` — `poll_interval_seconds: int = Field(gt=0, le=3600)`.
+- [x] `backend/app/config.py` — `slack_webhook_url: HttpUrl | None` plus `port` bounds and `log_level` enum validation.
+- [x] `backend/app/seed.py` — `load_dependencies(known_service_ids=...)` cross-validates every upstream and downstream against services.yaml; raises ValueError listing all offending edges.
+- [x] `backend/app/main.py` lifespan — Pass `known_service_ids` to `load_dependencies`; Pydantic validation runs at `Settings()` instantiation so the app refuses to start on bad env.
+
+**Exit criteria:** all unit tests pass (129/129 ✓), manual admin endpoint requires a token, app refuses to start on malformed config.
+
+---
+
+## Phase 1 — Vendor resilience (week 2)
+
+Current pollers have no retry/backoff/circuit-breaker logic. Fix the resilience layer so one vendor flapping can't take down the tool or trigger IP bans.
+
+### Libraries
+- **`stamina`** (hynek) for retries — exponential backoff with full jitter, opinionated defaults, Prometheus/structlog hooks.
+- **`purgatory`** for circuit breakers — async context-manager form, one breaker *per vendor host* (shared across services on the same status infra).
+
+### Tasks
+- [ ] Add `stamina` + `purgatory` to `requirements.txt`.
+- [ ] Wrap each poll function: `@stamina.retry(on=httpx.HTTPError, attempts=3, timeout=30.0)`.
+- [ ] Circuit breaker per unique host: half-open after 5–15 min (not 30s; status pages are slow to recover).
+- [ ] `backend/app/main.py` lifespan — configure shared `httpx.AsyncClient` with explicit limits + timeout:
+  ```python
+  limits = httpx.Limits(max_connections=20, max_connections_per_host=1, keepalive_expiry=30)
+  timeout = httpx.Timeout(10.0, connect=5.0, read=10.0, write=5.0, pool=2.0)
+  ```
+- [ ] Retry only 408/429/5xx. Never retry 404 — surface as config-health alert.
+
+### Per-service health tracking (schema change)
+Migration `0005_poller_health.sql`:
+```sql
+ALTER TABLE services ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE services ADD COLUMN last_success_at DATETIME;
+ALTER TABLE services ADD COLUMN last_failure_reason TEXT;
+ALTER TABLE services ADD COLUMN poller_health TEXT NOT NULL DEFAULT 'healthy'; -- healthy | degraded | broken
+```
+
+- [ ] Change detector increments/resets counters each poll.
+- [ ] After 3 consecutive failures → `poller_health='broken'` + fire **poller-health alert on a separate Slack channel** (`POLLER_HEALTH_SLACK_WEBHOOK_URL`).
+- [ ] UI tile shows `unknown` (dashed border, question-mark icon) when `poller_health != 'healthy'`. Never `operational`.
+
+### Normalizer hardening
+- [ ] `backend/app/poller/normalizer.py` — Log WARNING + emit Prometheus counter when returning UNKNOWN for an unknown vendor string.
+
+**Exit criteria:** simulated vendor 500s don't blow up alerts; one host failing doesn't affect others; "poller broken" is visible in UI distinctly from "service down".
+
+---
+
+## Phase 2 — Alert quality (week 3)
+
+Alert fatigue is the #1 killer of status dashboards. Current pipeline fires on every state change with no dedup, flap suppression, or correlation.
+
+### Flap suppression + hysteresis (Gatus model)
+- [ ] Require **3 consecutive failures** before firing an alert.
+- [ ] Require **2 consecutive successes** before clearing.
+- [ ] Enforce **10-minute minimum state duration** before paging.
+- [ ] Surface flapping as its own "unstable" UI badge — don't silently suppress.
+
+### Dedup
+- [ ] Primary key: `(service_id, vendor_incident_id)` when Statuspage provides it.
+- [ ] Fallback: `(service_id, status, day_bucket)`.
+- [ ] Never dedup on message text.
+- [ ] Table `alert_sent_log(dedup_key, first_sent_at, last_updated_at, slack_ts)` for ack-back linking.
+
+### Severity routing (config-driven)
+Add to `services.yaml`:
+```yaml
+tier: critical | important | informational
+slack_channel: <override, optional>
+owner: <team or person>
+runbook_url: <optional>
+```
+Routing:
+- `critical` → Slack channel + `@here` mention
+- `important` → Slack channel only
+- `informational` → dashboard only (no Slack)
+
+### Dependency correlation
+- [ ] When upstream (e.g., Okta) flips to `down`, emit **one** aggregated alert covering all affected dependents — not N alerts.
+- [ ] Merge subsequent state changes on affected services into the parent incident thread.
+
+### Maintenance windows (first-class)
+Migration `0006_maintenance_windows.sql`:
+```sql
+CREATE TABLE maintenance_windows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_id TEXT NOT NULL REFERENCES services(id),
+    starts_at DATETIME NOT NULL,
+    ends_at DATETIME NOT NULL,
+    source TEXT NOT NULL, -- manual | vendor_scheduled
+    title TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+- [ ] Auto-populate from Statuspage `scheduled_maintenances` array.
+- [ ] Alerts suppressed during active windows; state transitions still recorded.
+
+### Ack flow
+- [ ] Slack Block Kit message gains `Acknowledge` / `Snooze 30m` / `Resolve` buttons.
+- [ ] FastAPI callback endpoint `/api/slack/interactivity` (signed secret verification).
+- [ ] Ack auto-expires after 30 min; snooze configurable.
+
+**Exit criteria:** a vendor flapping 10x in an hour produces zero alerts; Okta down + 20 dependents = one alert; ack clicked in Slack reflects in dashboard.
+
+---
+
+## Phase 3 — Observability (week 4)
+
+If the app goes down, nobody knows. Fix meta-monitoring.
+
+### Structured logging
+- [ ] Adopt `structlog` (v24+) with `contextvars.bind_contextvars(poll_cycle_id=uuid4())` at each scheduler tick.
+- [ ] JSON formatter, ship to Box's central logging if available.
+- [ ] `QueueHandler` + `QueueListener` so file I/O doesn't block the event loop.
+
+### Prometheus metrics at `/metrics`
+- [ ] `poll_duration_seconds{service}` — histogram, buckets `[0.1, 0.5, 1, 2, 5, 10, 30]`.
+- [ ] `poll_success_total{service, outcome}` — `outcome` ∈ `ok | timeout | http_error | parse_error`.
+- [ ] `service_status{service}` — gauge (0=operational, 1=degraded, 2=partial, 3=major, 4=unknown).
+- [ ] `alerts_sent_total{channel, severity}` — counter.
+- [ ] `scheduler_last_heartbeat_seconds` — gauge.
+- [ ] `circuit_breaker_state{host}` — gauge.
+
+### Dead-man's switch
+- [ ] Heartbeat job (APScheduler, 30s) writes `last_heartbeat` row to DB.
+- [ ] Same job pings **Healthchecks.io** URL (`HEALTHCHECKS_PING_URL`).
+- [ ] `/healthz` returns 503 if heartbeat > 2 min stale; launchd restarts process.
+
+### Sentry (free tier)
+- [ ] `sentry-sdk[fastapi]` with `before_send` scrubbing secrets. `traces_sample_rate=0`.
+
+### Scheduler event listeners
+- [ ] `scheduler.add_listener(on_event, EVENT_JOB_ERROR | EVENT_JOB_MISSED)` — log + metric on each.
+- [ ] `job_defaults = {"coalesce": True, "max_instances": 1, "misfire_grace_time": 30}`, `timezone=ZoneInfo("UTC")`.
+
+**Exit criteria:** `/metrics` scrapes cleanly; a forced scheduler hang triggers a Healthchecks.io alert within 2 min; a forced exception appears in Sentry with poll_cycle_id.
+
+---
+
+## Phase 4 — Data lifecycle (week 4, parallel)
+
+### Connection pool
+- [ ] Replace module-level `_db` in `backend/app/database.py` with `aiosqlitepool` (5–10 readers + 1 writer serialized via `asyncio.Lock`).
+- [ ] Apply all pragmas on every connection open:
+  ```sql
+  PRAGMA journal_mode = WAL;
+  PRAGMA synchronous = NORMAL;
+  PRAGMA busy_timeout = 5000;
+  PRAGMA cache_size = -64000;
+  PRAGMA mmap_size = 268435456;
+  PRAGMA temp_store = MEMORY;
+  PRAGMA foreign_keys = ON;
+  ```
+
+### Backup: Litestream
+- [ ] Sidecar launchd process streams WAL frames to S3 (or local path if no S3). ~1s RPO.
+- [ ] Document restore procedure (`litestream restore`).
+
+### Retention
+- [ ] Weekly APScheduler job: `DELETE FROM status_events WHERE created_at < datetime('now', '-90 days')` + `PRAGMA wal_checkpoint(TRUNCATE)`.
+- [ ] Roll older events into daily aggregates for long-term uptime graphs.
+
+### Postgres migration path
+- Current load is ~30 writes/min (3 orders of magnitude under SQLite's limit). **Do not migrate prematurely.** Revisit at sustained >100 writes/s, multi-node, or >50GB.
+
+**Exit criteria:** connection pool under load test doesn't deadlock; Litestream restore produces a working DB; retention job runs cleanly.
+
+---
+
+## Phase 5 — UX productionization (week 5)
+
+### Information architecture
+- [ ] Grid **sorted by severity, worst-first** — not alphabetical.
+- [ ] Top banner: `{OK | N degraded | M down}` + stale-data chip.
+- [ ] Active incidents in band 2, dep graph + SLO behind tabs.
+
+### Stale data made visible
+- [ ] Adopt **TanStack Query v5**: `refetchInterval: 30_000`, `refetchOnWindowFocus: true`, `refetchIntervalInBackground: false`.
+- [ ] "Updated Xs ago" on each tile (`date-fns` + 1s ticker).
+- [ ] Tile fade to 80% opacity at 2× poll interval, banner amber at 5×.
+- [ ] **Never** render `operational` when `poller_health != 'healthy'`.
+
+### Status encoding (WCAG 1.4.1)
+- [ ] Five states, each with **icon + shape + color**. Lucide: `CheckCircle2 / AlertTriangle / AlertOctagon / XOctagon / HelpCircle`.
+- [ ] Contrast ≥3:1 for all status tiles.
+
+### Drill-down
+- [ ] Replace modal with **shadcn `Sheet`** (right-side drawer).
+- [ ] Order: status + timestamp → impact statement → vendor deeplink (primary button) → last 5 events → deps → runbook link.
+
+### Dep graph
+- [ ] Swap force-directed default for **Reagraph or React Flow + `@dagrejs/dagre`** hierarchical layout, grouped by tier.
+- [ ] Add matrix view (service × upstream, cells colored) as a leadership-friendly alternative.
+
+### Keyboard + a11y
+- [ ] `/` focus search, `j`/`k` nav, `Enter` open drawer, `Esc` close, `g h` home, `Cmd+K` palette via shadcn `Command`.
+- [ ] Tiles `role="button"` with `aria-label`; grid `role="grid"` roving tabindex.
+- [ ] `aria-live="polite"` for state transitions only.
+- [ ] Honor `prefers-reduced-motion` everywhere.
+
+### Loading / error / empty
+- [ ] Skeletons matching tile shape.
+- [ ] Page-level + widget-level error boundaries.
+- [ ] Empty states with icon + title + description + CTA.
+
+### Typography
+- [ ] Remove Inter / system-ui (global rule).
+- [ ] Adopt **Geist Sans + Geist Mono** via `@fontsource/geist-*`, or IBM Plex. `font-variant-numeric: tabular-nums` on numeric cells.
+
+**Exit criteria:** leadership can eyeball the grid at 3 seconds and find the worst service; all tiles pass Axe + keyboard nav.
+
+---
+
+## Phase 6 — Platform polish (week 6)
+
+### CI / quality gates
+- [ ] GitHub Actions: `astral-sh/setup-uv@v7` + `ruff`, `mypy --strict`, `pytest`. Pin uv version.
+- [ ] `pyproject.toml` with tool configs (currently missing).
+- [ ] Pre-commit hooks locally.
+
+### Test coverage
+- [ ] Poller unit tests with **`respx`** fixtures per vendor (record `summary.json` into `tests/fixtures/`).
+- [ ] Admin auth tests (happy path, missing token, bad token).
+- [ ] Cycle detection test for dep graph.
+- [ ] Flap suppression test.
+- [ ] Slack rate-limit retry test.
+- [ ] One end-to-end integration test: poll → change → DB write → alert fire.
+
+### launchd hardening
+- [ ] Replace `KeepAlive=true` with dict form (`SuccessfulExit=false`, `Crashed=true`).
+- [ ] `ThrottleInterval=30`.
+- [ ] `PYTHONUNBUFFERED=1` in `EnvironmentVariables`.
+- [ ] Use `WatchedFileHandler` (not `FileHandler`) to survive newsyslog rotation.
+
+### Caddy + secrets
+- [ ] Caddy in front of FastAPI for HTTPS + auth header injection.
+- [ ] Secrets via macOS Keychain (`security add-generic-password ...`), not plist env.
+
+**Exit criteria:** CI green on every PR; restart under load loses zero state; launchd recovers cleanly from crash.
+
+---
+
+## Phase 7 — Reach (month 2+, optional)
+
+- **Webhook receiver** — FastAPI route accepting Statuspage subscriber webhooks (signed-secret verified) for near-zero-latency updates on vendors that expose it.
+- **Postmortem automation** — Google-SRE-template Markdown per incident, committed to a repo (Summary → Impact → Root Cause → Timeline → What Went Well/Poorly/Lucky → Action Items categorized Prevent/Mitigate/Detect/Repair).
+- **SLO view** — Grafana-style fuel gauge (remaining error budget) + burn-rate line with 1× / 6× / 14.4× thresholds per tier.
+- **Multi-burn-rate alerting** — Google SRE canonical pattern: require both long and short window to breach before paging.
+- **Slack bot** — `/itstatus okta` slash command, natural-language deferred to post-LLM phase.
+
+---
+
+## Timeline summary
+
+| Phase | Duration | Outcome |
+|-------|----------|---------|
+| 0 — Stop bleeding | ~1 week | Auth, critical bugs fixed, config validated |
+| 1 — Vendor resilience | ~1 week | stamina + purgatory, `unknown` state, per-service health |
+| 2 — Alert quality | ~1 week | Dedup, flap suppression, severity routing, dep correlation, ack flow |
+| 3 — Observability | ~4 days | structlog, Prometheus, Sentry, dead-man's switch |
+| 4 — Data lifecycle | ~3 days | aiosqlitepool, Litestream, retention |
+| 5 — UX production | ~1.5 weeks | Stale indicator, Sheet drawer, a11y, keyboard nav |
+| 6 — Platform polish | ~4 days | CI, tests, launchd, Caddy, keychain |
+| 7 — Reach | ongoing | Webhooks, postmortems, SLOs, multi-burn-rate |
+
+**Total for "mature IT team can rely on it": ~5–6 weeks of focused work.**
+
+---
+
+## Governance
+
+- New work must trace to a phase in this document.
+- If a feature doesn't belong in any phase, discuss before starting — don't let the roadmap drift.
+- Update phase checkboxes as items land; commit the doc change with the code.
+- When Phase N completes, archive its checkbox list under a "Completed" header and move on.

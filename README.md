@@ -2,6 +2,14 @@
 
 Real-time status monitoring dashboard for ~30 SaaS services used by Box IT. Polls vendor status pages every 60 seconds, detects changes, generates impact statements using a service dependency graph, posts Slack alerts, and displays a unified dark-themed operations dashboard.
 
+## Project status
+
+- **v1 (demo-ready) — SHIPPED.** All original spec delivered: polling, normalization, change detection, Slack alerting, React UI, dependency graph, timeline, SLA tracking, incident clustering, auto reports.
+- **v2 (production-ready) — IN PROGRESS.** Hardening the tool so a mature IT team can rely on it: auth, resilience, alert hygiene, observability, accessibility.
+
+**Active roadmap:** [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md) — source of truth for current work.
+**Historical spec:** [IMPLEMENTATION-ROADMAP.md](./IMPLEMENTATION-ROADMAP.md) — archived; v1 is complete.
+
 ## Architecture
 
 ```
@@ -75,26 +83,31 @@ No authentication required — VPN access is the security boundary.
 
 ## Manual Status Updates
 
-For services without automated polling (Okta, Workday, Concur, etc.), update status via curl:
+For services without automated polling (Okta, Workday, Concur, etc.), update status via curl. **Admin endpoints require a bearer token** (set `ADMIN_API_TOKEN` in your env).
 
 ```bash
+export TOKEN="your-admin-token"
+
 # Set a service to degraded
 curl -X POST http://localhost:8000/api/admin/status \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"service_id": "workday", "new_status": "degraded", "detail": "Slow login page"}'
+  -d '{"service_id": "workday", "new_status": "degraded", "detail": "Slow login page", "reason": "Reported by user in #it-help"}'
 
 # Set to major outage
 curl -X POST http://localhost:8000/api/admin/status \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"service_id": "okta", "new_status": "major_outage", "detail": "SSO completely unavailable"}'
+  -d '{"service_id": "okta", "new_status": "major_outage", "detail": "SSO completely unavailable", "reason": "Confirmed with vendor"}'
 
 # Resolve (set back to operational)
 curl -X POST http://localhost:8000/api/admin/status \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"service_id": "okta", "new_status": "operational"}'
+  -d '{"service_id": "okta", "new_status": "operational", "reason": "Vendor posted recovery"}'
 ```
 
-Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`
+Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`, `unknown`. The `reason` field is required for audit trail.
 
 ## Environment Variables
 
@@ -102,10 +115,12 @@ Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`
 |----------|---------|-------------|
 | `SLACK_WEBHOOK_URL` | _(none)_ | Slack incoming webhook URL for #service-validation alerts |
 | `DATABASE_PATH` | `data.db` | SQLite database file path |
-| `POLL_INTERVAL_SECONDS` | `60` | How often to poll vendor status pages |
+| `POLL_INTERVAL_SECONDS` | `60` | How often to poll vendor status pages (1–3600) |
 | `HOST` | `127.0.0.1` | Server bind address (`0.0.0.0` for network access) |
 | `PORT` | `8000` | Server port |
 | `LOG_LEVEL` | `INFO` | Logging level |
+| `ADMIN_API_TOKEN` | _(none)_ | Bearer token required for `/api/admin/*` endpoints. If unset, admin endpoints refuse all requests. |
+| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated list of allowed CORS origins |
 
 Copy `.env.example` to `.env` and configure:
 ```bash
@@ -176,10 +191,15 @@ tail -f /var/log/it-health-dashboard.log
 | `/api/maintenance` | GET | Upcoming scheduled maintenances |
 | `/api/admin/status` | POST | Manual status update |
 
-## What's Next (v2+)
+## What's Next
 
-- **LLM Intelligence Layer** — Replace template-based summaries with Claude-generated situation reports
-- **Splunk Integration** — Correlate auth failure logs and network errors with service status
-- **JSM Ticket Correlation** — Count open tickets mentioning affected services
-- **Slack Bot** — `@it-agent what's going on with Okta?` for natural language queries
-- **ThousandEyes + Datadog** — Network and APM signal integration
+Current production-hardening work is tracked in [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md). Highlights:
+
+- **Phase 0 — Critical fixes:** admin auth, config validation, correctness bugs
+- **Phase 1 — Vendor resilience:** stamina retries + purgatory circuit breakers, per-service health tracking, `unknown` state
+- **Phase 2 — Alert hygiene:** flap suppression, dedup, severity routing, dependency correlation, ack flow
+- **Phase 3 — Observability:** structlog, Prometheus metrics, Sentry, Healthchecks.io dead-man's switch
+- **Phase 4 — Data lifecycle:** connection pool, Litestream backup, retention
+- **Phase 5 — UX production:** TanStack Query, stale-data chip, right-side drawer, a11y + keyboard nav
+- **Phase 6 — Platform polish:** CI, Caddy, keychain secrets, launchd hardening
+- **Phase 7 — Reach (post-v2):** inbound Statuspage webhooks, postmortem automation, SLO views, LLM layer, Splunk/JSM/ThousandEyes integration
