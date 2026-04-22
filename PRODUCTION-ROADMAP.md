@@ -127,8 +127,13 @@ Alert fatigue is the #1 killer of status dashboards. Current pipeline fires on e
 - [x] `is_in_maintenance_window()` normalizes both sides through SQLite's `datetime()` to handle vendor ISO and space-separated timestamps.
 - [x] Alerts during active windows are recorded with `suppressed_by='maintenance_window'` but don't fire. State transitions still captured.
 
-### Ack flow — DEFERRED to Phase 2B
-Backend schema (`alert_sent_log.acknowledged_at`, `acknowledged_by`, `resolved_at`, `slack_ts`) is in place. The Slack interactivity endpoint + signed-secret verification needs inbound HTTPS reachability (Cloudflare Tunnel, Socket Mode, or exposed ingress) which is a deployment decision. Not shipping half-wired buttons that silently do nothing. Schema is ready when the infra lands.
+### Ack flow — COMPLETE (Phase 2B, feature-gated off by default)
+- [x] `POST /api/slack/interactivity` — Slack v0 signing-secret verification (`v0:{ts}:{body}` HMAC-SHA256), replay protection (5-min window), parses `application/x-www-form-urlencoded` payload field.
+- [x] `block_actions` with `action_id == "ack_alert"` → sets `acknowledged_at` + `acknowledged_by` on most-recent unresolved `alert_sent_log` row.
+- [x] POSTs to `response_url` with `replace_original: true` + appended `✓ Acknowledged by @username at HH:MM UTC` context block.
+- [x] `build_slack_alert` + `build_aggregated_upstream_alert` append an Acknowledge button (`style: primary`) only when `SLACK_ACK_ENABLED=true` and a `dedup_key` is provided. Disabled path is byte-for-byte unchanged.
+- [x] Feature-gated: `SLACK_ACK_ENABLED=false` (default) → 404; `SLACK_SIGNING_SECRET` unset → 503.
+- [x] Requires public reachability (Cloudflare Tunnel, exposed ingress) — gate off until reachability is confirmed.
 
 ### Test coverage added
 - `tests/test_change_detector.py` — 13 new tests (9 state-machine + 4 integration).
@@ -335,7 +340,16 @@ If the app goes down, nobody knows. Fix meta-monitoring.
 
 ## Phase 7 — Reach (month 2+, optional)
 
-- **Webhook receiver** — FastAPI route accepting Statuspage subscriber webhooks (signed-secret verified) for near-zero-latency updates on vendors that expose it.
+### Webhook receiver — COMPLETE (feature-gated off by default)
+- [x] `POST /api/webhooks/statuspage/{service_id}` — HMAC-SHA256 signature verification (`X-Statuspage-Signature`), replay protection via `X-Statuspage-Timestamp` (optional header, 5-min tolerance).
+- [x] Handles `component_update` envelope → `normalize_statuspage_component`; `incident` envelope → `normalize_statuspage_indicator` on `impact` field. Unknown shapes 200 without crashing.
+- [x] Bypasses flap suppression — webhooks are authoritative. Writes directly to `status_events` + updates `services.current_status`, then calls `process_changes` so Slack + dedup are identical to polled changes.
+- [x] `structlog.contextvars` `webhook_id` binding so every downstream log line carries the request ID.
+- [x] Unsubscribe confirmation pings ack'd silently (200).
+- [x] Feature-gated: `WEBHOOKS_ENABLED=false` (default) → 404; `STATUSPAGE_WEBHOOK_SECRET` unset → 503.
+- [x] Requires public reachability — gate on until Cloudflare Tunnel / ingress is in place.
+
+### Deferred Phase 7 items
 - **Postmortem automation** — Google-SRE-template Markdown per incident, committed to a repo (Summary → Impact → Root Cause → Timeline → What Went Well/Poorly/Lucky → Action Items categorized Prevent/Mitigate/Detect/Repair).
 - **SLO view** — Grafana-style fuel gauge (remaining error budget) + burn-rate line with 1× / 6× / 14.4× thresholds per tier.
 - **Multi-burn-rate alerting** — Google SRE canonical pattern: require both long and short window to breach before paging.
