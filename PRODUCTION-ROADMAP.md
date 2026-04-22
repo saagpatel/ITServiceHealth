@@ -5,7 +5,7 @@
 ## Status
 
 - **v1 (demo) — SHIPPED.** Polling, normalization, change detection, Slack alerting, React UI, dependency graph, timeline, SLA tracking, incident clustering, auto reports — all implemented and running. See `IMPLEMENTATION-ROADMAP.md` for the historical spec.
-- **v2 (production-ready) — IN PROGRESS.** Moving the tool from "demo-ready" to something a mature IT team can rely on. Phase 0 active.
+- **v2 (production-ready) — SHIPPED.** Phases 0–6 complete, plus Phase 2B (Slack ack) and Phase 7 inbound Statuspage webhook — both feature-gated off by default until a public reachability path (Cloudflare Tunnel / Caddy allowlist) is in place. 276 tests passing. See phase sections below for deferred items still open.
 
 ## Guiding principle
 

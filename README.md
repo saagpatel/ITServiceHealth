@@ -122,7 +122,8 @@ Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`, `un
 | `PORT` | `8000` | Server port |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `ADMIN_API_TOKEN` | _(none)_ | Bearer token required for `/api/admin/*` endpoints. If unset, admin endpoints refuse all requests. |
-| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated list of allowed CORS origins |
+| `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated list of allowed CORS origins |
+| `SEED_DEMO_DATA` | `false` | Dev-only: auto-populate the DB with synthetic data on boot |
 | `POLLER_HEALTH_SLACK_WEBHOOK_URL` | _(none)_ | Separate webhook for poller-health alerts. Falls back to `SLACK_WEBHOOK_URL` when unset. |
 | `ALERT_CONFIRM_THRESHOLD_POLLS` | `3` | Consecutive polls required before firing a worsening alert (flap suppression) |
 | `ALERT_RECOVERY_THRESHOLD_POLLS` | `2` | Consecutive successes required before firing a recovery alert |
@@ -276,6 +277,8 @@ The retention job runs every `RETENTION_INTERVAL_HOURS` (default 168 = weekly) a
 | `/api/admin/status` | POST | Manual status update (requires `Authorization: Bearer $ADMIN_API_TOKEN`) |
 | `/healthz` | GET | Dead-man's switch — 200 fresh / 503 stale. Hit by launchd + Healthchecks.io. |
 | `/metrics` | GET | Prometheus text exposition. |
+| `/api/webhooks/statuspage/{id}` | POST | Inbound Statuspage subscriber webhook, HMAC-verified. 404 unless `WEBHOOKS_ENABLED=true`. |
+| `/api/slack/interactivity` | POST | Slack block-actions receiver (ack button). 404 unless `SLACK_ACK_ENABLED=true`. |
 
 ## What's Next
 
