@@ -74,6 +74,111 @@ def _compute_new_health(
     return "degraded"
 
 
+# ── Flap suppression (Phase 2) ──────────────────────────────────────
+
+STATUS_SEVERITY = {
+    "operational": 0,
+    "degraded": 1,
+    "partial_outage": 2,
+    "major_outage": 3,
+    "unknown": -1,
+}
+
+
+def _is_going_worse(from_status: str, to_status: str) -> bool:
+    """True when `to_status` is more severe than `from_status`.
+
+    "Going worse" gets the stricter confirm threshold + minimum dwell.
+    Recoveries get the lighter recovery threshold and no dwell — operators
+    want to see "fixed" fast, but "broken" only once it's real.
+    """
+    return STATUS_SEVERITY.get(to_status, 0) > STATUS_SEVERITY.get(from_status, 0)
+
+
+@dataclass
+class _PendingDecision:
+    """Outcome of a single poll against a service's pending-state buffer."""
+
+    # What the service row should look like after this poll
+    new_pending_status: str | None
+    new_pending_count: int
+    new_pending_since: str | None
+    # If set, promote current_status to this — emit a StatusChange
+    promoted_status: str | None
+
+
+def _update_pending(
+    *,
+    poll_status: str,
+    current_status: str,
+    pending_status: str | None,
+    pending_count: int,
+    pending_since: str | None,
+    now: str,
+    now_dt: datetime,
+    confirm_threshold: int,
+    recovery_threshold: int,
+    min_state_duration_seconds: int,
+) -> _PendingDecision:
+    """Pure state machine: turn this poll + prior pending state into a decision.
+
+    Three cases:
+
+    1. Poll matches current_status — any pending state clears (the flap
+       didn't persist).
+    2. Poll matches the pending status — increment. If the confirmation
+       threshold is met AND (for worsening transitions) the minimum dwell
+       has elapsed, promote; otherwise keep accumulating.
+    3. Poll is a new target — reset the pending buffer to this status
+       with a count of 1.
+    """
+    if poll_status == current_status:
+        return _PendingDecision(
+            new_pending_status=None,
+            new_pending_count=0,
+            new_pending_since=None,
+            promoted_status=None,
+        )
+
+    # Continuing pending target: increment; otherwise this is a new
+    # observation (either first ever, or a different target than before).
+    if poll_status == pending_status and pending_since is not None:
+        new_count = pending_count + 1
+        new_since = pending_since
+    else:
+        new_count = 1
+        new_since = now
+
+    going_worse = _is_going_worse(current_status, poll_status)
+    threshold = confirm_threshold if going_worse else recovery_threshold
+
+    ready_by_count = new_count >= threshold
+    ready_by_dwell = True
+    if going_worse and min_state_duration_seconds > 0:
+        try:
+            since_dt = datetime.fromisoformat(
+                new_since.replace("Z", "+00:00")
+            )
+            elapsed = (now_dt - since_dt).total_seconds()
+            ready_by_dwell = elapsed >= min_state_duration_seconds
+        except (ValueError, AttributeError):
+            ready_by_dwell = True
+
+    if ready_by_count and ready_by_dwell:
+        return _PendingDecision(
+            new_pending_status=None,
+            new_pending_count=0,
+            new_pending_since=None,
+            promoted_status=poll_status,
+        )
+    return _PendingDecision(
+        new_pending_status=poll_status,
+        new_pending_count=new_count,
+        new_pending_since=new_since,
+        promoted_status=None,
+    )
+
+
 async def detect_changes(
     db: aiosqlite.Connection,
     write_lock: "asyncio.Lock",
@@ -100,13 +205,16 @@ async def detect_changes(
         return [], []
 
     service_ids = [sid for sid, _ in poll_results]
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Batch-read current state including poller-health trail
+    # Batch-read current state including poller-health + flap-suppression trails
     placeholders = ",".join("?" for _ in service_ids)
     cursor = await db.execute(
         f"""SELECT id, display_name, current_status, poll_type, status_page_url,
-                   consecutive_failures, poller_health
+                   consecutive_failures, poller_health,
+                   pending_status, pending_status_count, pending_status_since,
+                   tier
             FROM services WHERE id IN ({placeholders})""",
         service_ids,
     )
@@ -116,6 +224,9 @@ async def detect_changes(
     changes: list[StatusChange] = []
     health_changes: list[PollerHealthChange] = []
     threshold = settings.poller_failure_threshold
+    confirm_threshold = settings.alert_confirm_threshold_polls
+    recovery_threshold = settings.alert_recovery_threshold_polls
+    min_state_duration = settings.alert_min_state_duration_seconds
 
     async with write_lock:
         for service_id, poll_result in poll_results:
@@ -186,11 +297,43 @@ async def detect_changes(
             if not poll_succeeded:
                 continue
 
-            new_status = poll_result.status.value
+            poll_status = poll_result.status.value
             old_status = svc["current_status"]
 
-            if new_status != old_status:
-                # Status changed — update service and create event
+            # Flap suppression: a status change must persist for N consecutive
+            # polls (and min dwell for worsening) before it becomes the
+            # committed current_status + fires a StatusChange alert.
+            decision = _update_pending(
+                poll_status=poll_status,
+                current_status=old_status,
+                pending_status=svc["pending_status"],
+                pending_count=svc["pending_status_count"] or 0,
+                pending_since=svc["pending_status_since"],
+                now=now,
+                now_dt=now_dt,
+                confirm_threshold=confirm_threshold,
+                recovery_threshold=recovery_threshold,
+                min_state_duration_seconds=min_state_duration,
+            )
+
+            # Always persist the pending-buffer updates
+            await db.execute(
+                """UPDATE services
+                   SET pending_status = ?,
+                       pending_status_count = ?,
+                       pending_status_since = ?
+                   WHERE id = ?""",
+                (
+                    decision.new_pending_status,
+                    decision.new_pending_count,
+                    decision.new_pending_since,
+                    service_id,
+                ),
+            )
+
+            if decision.promoted_status:
+                # Confirmed state transition — flip current_status + insert event
+                new_status = decision.promoted_status
                 await db.execute(
                     """UPDATE services
                        SET current_status = ?, current_status_detail = ?,
@@ -224,11 +367,19 @@ async def detect_changes(
                 ))
 
                 logger.info(
-                    "Status change: %s (%s) %s → %s",
+                    "Confirmed status change: %s (%s) %s → %s",
                     svc["display_name"], service_id, old_status, new_status,
                 )
-            else:
-                # Same status — just update detail
+            elif decision.new_pending_status and decision.new_pending_count == 1:
+                logger.debug(
+                    "Pending %s (%s) → %s (1 poll, need %d)",
+                    svc["display_name"], service_id, poll_status,
+                    confirm_threshold if _is_going_worse(old_status, poll_status) else recovery_threshold,
+                )
+
+            # Stable reading: refresh current_status_detail regardless of
+            # whether we promoted (so the UI shows latest vendor text).
+            if poll_status == old_status:
                 await db.execute(
                     """UPDATE services
                        SET current_status_detail = ?
@@ -280,10 +431,16 @@ async def apply_manual_update(
 
     async with write_lock:
         if new_status.value != old_status:
+            # Manual overrides bypass flap suppression by design. Clear any
+            # pending buffer too so the next poll doesn't immediately try to
+            # promote the vendor's view back over the operator's.
             await db.execute(
                 """UPDATE services
                    SET current_status = ?, current_status_detail = ?,
-                       last_status_change_at = ?
+                       last_status_change_at = ?,
+                       pending_status = NULL,
+                       pending_status_count = 0,
+                       pending_status_since = NULL
                    WHERE id = ?""",
                 (new_status.value, detail, now, service_id),
             )

@@ -4,16 +4,28 @@ import asyncio
 
 import pytest
 
+from app.config import settings
 from app.poller.change_detector import (
     PollerHealthChange,
     StatusChange,
     _compute_new_health,
+    _is_going_worse,
+    _update_pending,
     apply_manual_update,
     detect_changes,
     upsert_maintenances,
 )
 from app.poller.normalizer import ServiceStatus
 from app.poller.statuspage_poller import PollResult
+
+
+@pytest.fixture
+def _no_flap_suppression(monkeypatch):
+    """Disable flap suppression so legacy tests still assert immediate flips.
+    Flap-specific tests use their own explicit thresholds."""
+    monkeypatch.setattr(settings, "alert_confirm_threshold_polls", 1)
+    monkeypatch.setattr(settings, "alert_recovery_threshold_polls", 1)
+    monkeypatch.setattr(settings, "alert_min_state_duration_seconds", 0)
 
 
 async def _insert_service(db, service_id="test-svc", status="operational", poll_type="statuspage_json"):
@@ -27,6 +39,7 @@ async def _insert_service(db, service_id="test-svc", status="operational", poll_
     await db.commit()
 
 
+@pytest.mark.usefixtures("_no_flap_suppression")
 class TestDetectChanges:
     async def test_status_change_creates_event(self, db):
         await _insert_service(db, "svc-a", "operational")
@@ -157,6 +170,218 @@ class TestPollerHealthStateMachine:
         assert _compute_new_health("broken", 10, False, threshold=3) == "broken"
 
 
+class TestFlapSuppressionStateMachine:
+    """Pure unit tests for `_update_pending` — no DB, no I/O."""
+
+    NOW_STR = "2026-05-01T00:00:00Z"
+    from datetime import datetime, timezone
+    NOW_DT = datetime.fromisoformat(NOW_STR.replace("Z", "+00:00"))
+
+    def test_same_status_clears_pending(self):
+        d = _update_pending(
+            poll_status="operational",
+            current_status="operational",
+            pending_status="degraded",
+            pending_count=2,
+            pending_since="2026-05-01T00:00:00Z",
+            now=self.NOW_STR, now_dt=self.NOW_DT,
+            confirm_threshold=3, recovery_threshold=2,
+            min_state_duration_seconds=0,
+        )
+        assert d.new_pending_status is None
+        assert d.new_pending_count == 0
+        assert d.promoted_status is None
+
+    def test_first_observation_sets_pending_to_one(self):
+        d = _update_pending(
+            poll_status="degraded",
+            current_status="operational",
+            pending_status=None,
+            pending_count=0,
+            pending_since=None,
+            now=self.NOW_STR, now_dt=self.NOW_DT,
+            confirm_threshold=3, recovery_threshold=2,
+            min_state_duration_seconds=0,
+        )
+        assert d.new_pending_status == "degraded"
+        assert d.new_pending_count == 1
+        assert d.promoted_status is None
+
+    def test_increments_on_matching_target(self):
+        d = _update_pending(
+            poll_status="degraded",
+            current_status="operational",
+            pending_status="degraded",
+            pending_count=1,
+            pending_since=self.NOW_STR,
+            now=self.NOW_STR, now_dt=self.NOW_DT,
+            confirm_threshold=3, recovery_threshold=2,
+            min_state_duration_seconds=0,
+        )
+        assert d.new_pending_count == 2
+        assert d.promoted_status is None
+
+    def test_promotes_when_confirm_threshold_met(self):
+        d = _update_pending(
+            poll_status="degraded",
+            current_status="operational",
+            pending_status="degraded",
+            pending_count=2,          # +1 this poll = 3
+            pending_since=self.NOW_STR,
+            now=self.NOW_STR, now_dt=self.NOW_DT,
+            confirm_threshold=3, recovery_threshold=2,
+            min_state_duration_seconds=0,
+        )
+        assert d.promoted_status == "degraded"
+        assert d.new_pending_status is None
+
+    def test_recovery_uses_lower_threshold(self):
+        d = _update_pending(
+            poll_status="operational",
+            current_status="degraded",
+            pending_status="operational",
+            pending_count=1,          # +1 this poll = 2
+            pending_since=self.NOW_STR,
+            now=self.NOW_STR, now_dt=self.NOW_DT,
+            confirm_threshold=3, recovery_threshold=2,
+            min_state_duration_seconds=600,  # dwell IGNORED for recovery
+        )
+        assert d.promoted_status == "operational"
+
+    def test_min_dwell_blocks_promote_for_worsening(self):
+        # Count threshold met, but only 30s elapsed vs 600s minimum dwell
+        from datetime import timedelta
+        since = "2026-05-01T00:00:00Z"
+        now = self.NOW_DT + timedelta(seconds=30)
+        d = _update_pending(
+            poll_status="major_outage",
+            current_status="operational",
+            pending_status="major_outage",
+            pending_count=2,         # +1 = 3, meets count threshold
+            pending_since=since,
+            now=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            now_dt=now,
+            confirm_threshold=3, recovery_threshold=2,
+            min_state_duration_seconds=600,
+        )
+        # Dwell not met yet — still pending
+        assert d.promoted_status is None
+        assert d.new_pending_count == 3
+
+    def test_min_dwell_allows_promote_once_elapsed(self):
+        from datetime import timedelta
+        since = "2026-05-01T00:00:00Z"
+        now = self.NOW_DT + timedelta(seconds=700)
+        d = _update_pending(
+            poll_status="major_outage",
+            current_status="operational",
+            pending_status="major_outage",
+            pending_count=2,
+            pending_since=since,
+            now=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            now_dt=now,
+            confirm_threshold=3, recovery_threshold=2,
+            min_state_duration_seconds=600,
+        )
+        assert d.promoted_status == "major_outage"
+
+    def test_different_target_resets_buffer(self):
+        """Flapping between degraded and major_outage resets to count=1."""
+        d = _update_pending(
+            poll_status="major_outage",
+            current_status="operational",
+            pending_status="degraded",   # was pending degraded
+            pending_count=2,
+            pending_since=self.NOW_STR,
+            now=self.NOW_STR, now_dt=self.NOW_DT,
+            confirm_threshold=3, recovery_threshold=2,
+            min_state_duration_seconds=0,
+        )
+        assert d.new_pending_status == "major_outage"
+        assert d.new_pending_count == 1
+
+    def test_is_going_worse_helper(self):
+        assert _is_going_worse("operational", "degraded")
+        assert _is_going_worse("degraded", "major_outage")
+        assert not _is_going_worse("degraded", "operational")
+        assert not _is_going_worse("operational", "operational")
+
+
+class TestFlapSuppressionIntegration:
+    """End-to-end: drive detect_changes across multiple polls to confirm
+    flap suppression actually keeps us quiet."""
+
+    async def _set_thresholds(self, monkeypatch, confirm, recovery, dwell):
+        monkeypatch.setattr(settings, "alert_confirm_threshold_polls", confirm)
+        monkeypatch.setattr(settings, "alert_recovery_threshold_polls", recovery)
+        monkeypatch.setattr(settings, "alert_min_state_duration_seconds", dwell)
+
+    async def test_single_blip_produces_zero_alerts(self, db, monkeypatch):
+        await self._set_thresholds(monkeypatch, confirm=3, recovery=2, dwell=0)
+        await _insert_service(db, "flap", "operational")
+        lock = asyncio.Lock()
+
+        # One poll showing degraded, then back to operational
+        changes1, _ = await detect_changes(db, lock, [("flap", PollResult(status=ServiceStatus.DEGRADED))])
+        changes2, _ = await detect_changes(db, lock, [("flap", PollResult(status=ServiceStatus.OPERATIONAL))])
+
+        assert changes1 == []
+        assert changes2 == []
+
+        cursor = await db.execute(
+            "SELECT current_status, pending_status, pending_status_count FROM services WHERE id='flap'"
+        )
+        row = dict(await cursor.fetchone())
+        assert row["current_status"] == "operational"  # Never flipped
+        assert row["pending_status"] is None           # Cleared on return to stable
+
+    async def test_three_polls_confirm_status_change(self, db, monkeypatch):
+        await self._set_thresholds(monkeypatch, confirm=3, recovery=2, dwell=0)
+        await _insert_service(db, "confirm", "operational")
+        lock = asyncio.Lock()
+
+        # First poll — pending, no change
+        c1, _ = await detect_changes(db, lock, [("confirm", PollResult(status=ServiceStatus.DEGRADED))])
+        assert c1 == []
+        # Second poll — still pending
+        c2, _ = await detect_changes(db, lock, [("confirm", PollResult(status=ServiceStatus.DEGRADED))])
+        assert c2 == []
+        # Third poll — promoted
+        c3, _ = await detect_changes(db, lock, [("confirm", PollResult(status=ServiceStatus.DEGRADED))])
+        assert len(c3) == 1
+        assert c3[0].new_status == "degraded"
+
+    async def test_different_pending_targets_reset_counter(self, db, monkeypatch):
+        await self._set_thresholds(monkeypatch, confirm=3, recovery=2, dwell=0)
+        await _insert_service(db, "mixed", "operational")
+        lock = asyncio.Lock()
+
+        # Degraded x 2, then major_outage x 2 — should NOT promote
+        # because the target changed mid-stream.
+        for _ in range(2):
+            await detect_changes(db, lock, [("mixed", PollResult(status=ServiceStatus.DEGRADED))])
+        for _ in range(2):
+            c, _ = await detect_changes(db, lock, [("mixed", PollResult(status=ServiceStatus.MAJOR_OUTAGE))])
+
+        # Only 2 consecutive major_outage polls, threshold is 3 → no promote
+        assert c == []
+        cursor = await db.execute("SELECT current_status FROM services WHERE id='mixed'")
+        assert dict(await cursor.fetchone())["current_status"] == "operational"
+
+    async def test_recovery_promotes_after_two_polls(self, db, monkeypatch):
+        await self._set_thresholds(monkeypatch, confirm=3, recovery=2, dwell=0)
+        await _insert_service(db, "rec", "degraded")
+        lock = asyncio.Lock()
+
+        c1, _ = await detect_changes(db, lock, [("rec", PollResult(status=ServiceStatus.OPERATIONAL))])
+        c2, _ = await detect_changes(db, lock, [("rec", PollResult(status=ServiceStatus.OPERATIONAL))])
+
+        assert c1 == []
+        assert len(c2) == 1
+        assert c2[0].new_status == "operational"
+
+
+@pytest.mark.usefixtures("_no_flap_suppression")
 class TestPollerHealthTransitions:
     async def test_three_failures_flip_to_broken(self, db):
         await _insert_service(db, "flaky", "operational")

@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     # main webhook but are tagged as such.
     poller_health_slack_webhook_url: HttpUrl | None = None
 
+    # Alert-quality knobs (Phase 2) — see app/alerting/ and change_detector.py
+    alert_confirm_threshold_polls: int = Field(default=3, gt=0, le=20)
+    alert_recovery_threshold_polls: int = Field(default=2, gt=0, le=20)
+    alert_min_state_duration_seconds: int = Field(default=600, ge=0, le=86400)
+    alert_dedup_window_seconds: int = Field(default=86400, gt=0, le=604800)
+    # If an upstream service with at least this many unhealthy dependents
+    # changes state, emit one aggregated alert instead of one per dependent.
+    dependency_correlation_threshold: int = Field(default=3, gt=0, le=100)
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, v: str) -> str:

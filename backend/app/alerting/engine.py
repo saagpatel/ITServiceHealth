@@ -18,7 +18,13 @@ import logging
 import aiosqlite
 import httpx
 
+from app.alerting.routing import (
+    find_aggregation_candidates,
+    record_alert,
+    route_status_change,
+)
 from app.alerting.slack import (
+    build_aggregated_upstream_alert,
     build_batch_slack_alert,
     build_poller_health_alert,
     build_slack_alert,
@@ -40,33 +46,43 @@ async def process_changes(
     changes: list[StatusChange],
     http_client: httpx.AsyncClient | None = None,
 ) -> None:
-    """Process status changes: generate impact statements, update DB, send Slack alerts.
+    """Process status changes: generate impact statements, route, and alert.
 
-    For each change:
-    1. Query downstream impacts
-    2. Generate impact statement
-    3. Write impact_statement to the status_events row
-
-    Then send Slack alerts (if webhook configured):
-    - 1-3 changes: individual messages with 1s delay
-    - >3 changes: single batch message
-    - Suppress: skip Slack for unknown→operational (boot warmup)
+    Pipeline per change:
+      1. Generate impact statement (dependency graph + templates).
+      2. Write impact_statement back to the status_events row.
+      3. Generate an incident report on recovery.
+      4. Route through `alert_sent_log` (maintenance, dedup, tier).
+      5. If upstream-down caused >= N dependents to flip, consolidate
+         their individual alerts into one aggregated upstream alert.
+      6. Send the Slack payload with the appropriate mention (@here for
+         critical tier, no mention otherwise).
     """
     if not changes:
         return
 
-    alert_data: list[tuple[str, str, str, str, str | None]] = []
+    # Dependency correlation: group downstream changes under upstream
+    # parent changes when the configured threshold is met.
+    aggregation = await find_aggregation_candidates(
+        db, changes, threshold=settings.dependency_correlation_threshold,
+    )
+    aggregated_under: dict[str, str] = {}
+    for upstream_id, dependents in aggregation.items():
+        upstream_change = next(c for c in changes if c.service_id == upstream_id)
+        for dep in dependents:
+            aggregated_under[dep.service_id] = upstream_change.service_display_name
 
+    # Generate + persist impact statements + incident reports
+    impact_by_service: dict[str, str] = {}
     for change in changes:
-        # Generate impact statement
         try:
             downstream = await get_downstream(db, change.service_id)
             impact = generate_impact_statement(change, downstream)
         except Exception:
             logger.exception("Failed to generate impact for %s", change.service_id)
             impact = f"{change.service_display_name} status changed."
+        impact_by_service[change.service_id] = impact
 
-        # Write impact_statement to status_events
         try:
             async with write_lock:
                 if change.event_id:
@@ -75,7 +91,6 @@ async def process_changes(
                         (impact, change.event_id),
                     )
                 else:
-                    # Fallback: update most recent event for this service
                     await db.execute(
                         """UPDATE status_events SET impact_statement = ?
                            WHERE id = (
@@ -89,7 +104,6 @@ async def process_changes(
         except Exception:
             logger.exception("Failed to write impact_statement for %s", change.service_id)
 
-        # Generate incident report on recovery (non-boot)
         is_boot_warmup = (
             change.previous_status == "unknown"
             and change.new_status == "operational"
@@ -103,45 +117,126 @@ async def process_changes(
             except Exception:
                 logger.exception("Failed to generate incident report for %s", change.service_id)
 
-        # Collect Slack alert data (suppress boot warmup: unknown→operational)
-        if not is_boot_warmup:
-            alert_data.append((
-                change.service_display_name,
-                change.previous_status,
-                change.new_status,
-                impact,
-                change.status_page_url,
-            ))
+    # Route every change; suppressed alerts still record to alert_sent_log
+    # so operators can audit "why didn't we alert on X?".
+    individual_sends: list[tuple[StatusChange, str]] = []
+    for change in changes:
+        is_boot_warmup = (
+            change.previous_status == "unknown"
+            and change.new_status == "operational"
+        )
+        if is_boot_warmup:
+            # Still record the state transition, but don't alert — a service
+            # resolving from unknown to operational just means the poller
+            # warmed up; it's not real news.
+            continue
 
-    # Send Slack alerts
+        decision = await route_status_change(
+            db, change, aggregated_under=aggregated_under.get(change.service_id),
+        )
+        async with write_lock:
+            await record_alert(db, change, decision)
+            await db.commit()
+
+        if decision.suppressed_by:
+            logger.info(
+                "Suppressed alert for %s (%s → %s): %s",
+                change.service_display_name,
+                change.previous_status, change.new_status,
+                decision.suppressed_by,
+            )
+            continue
+        individual_sends.append((change, decision.channel_mention or ""))
+
+    # Build aggregated upstream messages (one per upstream with >= threshold dependents)
+    aggregated_payloads: list[tuple[str, dict]] = []
+    for upstream_id, dependents in aggregation.items():
+        upstream_change = next(c for c in changes if c.service_id == upstream_id)
+        decision = await route_status_change(db, upstream_change)
+        async with write_lock:
+            await record_alert(
+                db, upstream_change, decision, alert_kind="aggregated_upstream",
+            )
+            await db.commit()
+
+        if decision.suppressed_by:
+            # Upstream itself is suppressed (tier/maintenance/dedup/webhook).
+            # Don't emit aggregated either — but individual dependents are
+            # still suppressed via aggregated_under to avoid a flood. This
+            # is the right behavior: if the upstream isn't worth alerting
+            # on, neither are its N dependents saying the same thing.
+            logger.info(
+                "Aggregated alert for %s suppressed (%s); %d dependents also silenced",
+                upstream_change.service_display_name,
+                decision.suppressed_by, len(dependents),
+            )
+            continue
+
+        payload = build_aggregated_upstream_alert(
+            upstream_change=upstream_change,
+            dependents=dependents,
+            impact_statement=impact_by_service.get(upstream_id, ""),
+            mention=decision.channel_mention,
+        )
+        aggregated_payloads.append((decision.webhook_url, payload))
+
+    # Send aggregated payloads first (they're the headline news)
+    for webhook_url, payload in aggregated_payloads:
+        try:
+            ok = await send_slack_alert(webhook_url, payload, client=http_client)
+            if ok:
+                logger.info("Sent aggregated upstream alert")
+            else:
+                logger.warning("Failed to send aggregated upstream alert")
+        except Exception:
+            logger.exception("Aggregated alert send failed")
+        await asyncio.sleep(1.0)
+
+    # Send individual alerts — either via batch (>3) or one-by-one
+    if not individual_sends:
+        return
+
     webhook_url = settings.slack_webhook_url_str
-    if not alert_data or not webhook_url:
-        if alert_data:
-            logger.debug("Slack webhook not configured, skipping %d alert(s)", len(alert_data))
+    if not webhook_url:
         return
 
     try:
-        if len(alert_data) > BATCH_THRESHOLD:
+        if len(individual_sends) > BATCH_THRESHOLD:
+            alert_data = [
+                (
+                    c.service_display_name,
+                    c.previous_status,
+                    c.new_status,
+                    impact_by_service.get(c.service_id, ""),
+                    c.status_page_url,
+                )
+                for c, _mention in individual_sends
+            ]
             payload = build_batch_slack_alert(alert_data)
-            success = await send_slack_alert(
-                webhook_url, payload, client=http_client,
-            )
-            if success:
-                logger.info("Sent batch Slack alert for %d changes", len(alert_data))
+            ok = await send_slack_alert(webhook_url, payload, client=http_client)
+            if ok:
+                logger.info("Sent batch Slack alert for %d changes", len(individual_sends))
             else:
                 logger.warning("Failed to send batch Slack alert")
         else:
-            for i, (name, old, new, impact, url) in enumerate(alert_data):
+            for i, (change, mention) in enumerate(individual_sends):
                 if i > 0:
                     await asyncio.sleep(1.0)
-                payload = build_slack_alert(name, old, new, impact, url)
-                success = await send_slack_alert(
-                    webhook_url, payload, client=http_client,
+                payload = build_slack_alert(
+                    change.service_display_name,
+                    change.previous_status,
+                    change.new_status,
+                    impact_by_service.get(change.service_id, ""),
+                    change.status_page_url,
+                    mention=mention or None,
                 )
-                if success:
-                    logger.info("Sent Slack alert for %s", name)
+                ok = await send_slack_alert(webhook_url, payload, client=http_client)
+                if ok:
+                    logger.info("Sent Slack alert for %s", change.service_display_name)
                 else:
-                    logger.warning("Failed to send Slack alert for %s", name)
+                    logger.warning(
+                        "Failed to send Slack alert for %s", change.service_display_name,
+                    )
     except Exception:
         logger.exception("Slack alerting failed")
 

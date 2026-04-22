@@ -24,6 +24,8 @@ VALID_POLL_TYPES = Literal[
     "salesforce_trust", "zendesk_api", "ringcentral_api",
 ]
 
+VALID_TIERS = Literal["critical", "important", "informational"]
+
 
 class ServiceConfig(BaseModel):
     """Pydantic model for validating a service entry in services.yaml."""
@@ -35,6 +37,11 @@ class ServiceConfig(BaseModel):
     poll_url: str | None = None
     statuspage_component_name: str | None = None
     status_page_url: str | None = None
+    # Tier controls alert routing (see app/alerting/routing.py).
+    # Defaults to 'important' so every service is audible without being
+    # loud — operators upgrade critical ones explicitly in services.yaml.
+    tier: VALID_TIERS = "important"
+    slack_channel_override: str | None = None
 
     @model_validator(mode="after")
     def require_url_for_polled_services(self) -> "ServiceConfig":
@@ -131,11 +138,25 @@ async def seed_services(services: list[ServiceConfig]) -> int:
     conn = await get_db()
     async with get_write_lock():
         for svc in services:
+            # Preserve runtime state (current_status, poller_health, etc.) when
+            # re-seeding by upserting only the config columns. INSERT OR REPLACE
+            # would nuke them and cause a spurious unknown→operational event on
+            # every restart.
             await conn.execute(
-                """INSERT OR REPLACE INTO services
+                """INSERT INTO services
                    (id, display_name, category, poll_type, poll_url,
-                    statuspage_component_name, status_page_url, current_status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'unknown')""",
+                    statuspage_component_name, status_page_url,
+                    tier, slack_channel_override, current_status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown')
+                   ON CONFLICT(id) DO UPDATE SET
+                       display_name = excluded.display_name,
+                       category = excluded.category,
+                       poll_type = excluded.poll_type,
+                       poll_url = excluded.poll_url,
+                       statuspage_component_name = excluded.statuspage_component_name,
+                       status_page_url = excluded.status_page_url,
+                       tier = excluded.tier,
+                       slack_channel_override = excluded.slack_channel_override""",
                 (
                     svc.id,
                     svc.display_name,
@@ -144,6 +165,8 @@ async def seed_services(services: list[ServiceConfig]) -> int:
                     svc.poll_url,
                     svc.statuspage_component_name,
                     svc.status_page_url,
+                    svc.tier,
+                    svc.slack_channel_override,
                 ),
             )
         await conn.commit()

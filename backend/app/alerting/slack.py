@@ -60,10 +60,19 @@ def build_slack_alert(
     new_status: str,
     impact_statement: str,
     status_page_url: str | None,
+    mention: str | None = None,
 ) -> dict:
-    """Build a Slack Block Kit payload for a single status change."""
+    """Build a Slack Block Kit payload for a single status change.
+
+    `mention` is prepended to the impact section when set (e.g., `<!here>`
+    for critical-tier services). Empty strings or None mean no mention.
+    """
     emoji = EMOJI_MAP.get(new_status, "\u26ab")
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    impact_body = (
+        f"{mention} {impact_statement}".strip() if mention else impact_statement
+    )
 
     blocks = [
         {
@@ -83,7 +92,7 @@ def build_slack_alert(
         },
         {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Impact:*\n{impact_statement}"},
+            "text": {"type": "mrkdwn", "text": f"*Impact:*\n{impact_body}"},
         },
     ]
 
@@ -160,6 +169,86 @@ def build_batch_slack_alert(
         "text": f"\U0001f6a8 {len(changes)} status changes: {fallback}",
         "blocks": blocks,
     }
+
+
+def build_aggregated_upstream_alert(
+    upstream_change,                          # StatusChange for the upstream
+    dependents: list,                         # list[StatusChange] for affected downstream
+    impact_statement: str,
+    mention: str | None = None,
+) -> dict:
+    """Render a single Slack message that consolidates an upstream outage
+    with all downstream services impacted in the same poll cycle.
+
+    Prevents the "Okta down + 20 services alert" thundering herd by rolling
+    the dependents into one message citing them all.
+    """
+    emoji = EMOJI_MAP.get(upstream_change.new_status, "\u26ab")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    dep_names = [d.service_display_name for d in dependents]
+
+    impact_body = (
+        f"{mention} {impact_statement}".strip() if mention else impact_statement
+    )
+
+    header_text = (
+        f"{emoji} {upstream_change.service_display_name} "
+        f"{_format_status(upstream_change.new_status)} "
+        f"— {len(dep_names)} dependent service(s) affected"
+    )
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": header_text, "emoji": True},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Impact:*\n{impact_body}"},
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    "*Dependent services affected:*\n"
+                    + "\n".join(f"\u2022 {n}" for n in dep_names[:20])
+                    + (f"\n_…and {len(dep_names) - 20} more_" if len(dep_names) > 20 else "")
+                ),
+            },
+        },
+    ]
+
+    if upstream_change.status_page_url:
+        blocks.append({
+            "type": "actions",
+            "elements": [{
+                "type": "button",
+                "text": {"type": "plain_text", "text": "View Status Page"},
+                "url": upstream_change.status_page_url,
+                "action_id": "view_upstream_status_page",
+            }],
+        })
+
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "context",
+        "elements": [{
+            "type": "mrkdwn",
+            "text": (
+                f"IT Service Health Dashboard \u2022 Aggregated upstream alert "
+                f"\u2022 {now}"
+            ),
+        }],
+    })
+
+    fallback = (
+        f"{emoji} {upstream_change.service_display_name}: "
+        f"{_format_status(upstream_change.previous_status)} \u2192 "
+        f"{_format_status(upstream_change.new_status)} "
+        f"({len(dep_names)} dependents impacted)"
+    )
+    return {"text": fallback, "blocks": blocks}
 
 
 def build_poller_health_alert(

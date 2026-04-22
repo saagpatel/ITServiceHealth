@@ -89,61 +89,60 @@ Migration `0005_poller_health.sql` adds `consecutive_failures`, `last_success_at
 
 ---
 
-## Phase 2 — Alert quality (week 3)
+## Phase 2 — Alert quality (week 3) — COMPLETE (ack flow deferred)
 
 Alert fatigue is the #1 killer of status dashboards. Current pipeline fires on every state change with no dedup, flap suppression, or correlation.
 
 ### Flap suppression + hysteresis (Gatus model)
-- [ ] Require **3 consecutive failures** before firing an alert.
-- [ ] Require **2 consecutive successes** before clearing.
-- [ ] Enforce **10-minute minimum state duration** before paging.
-- [ ] Surface flapping as its own "unstable" UI badge — don't silently suppress.
+- [x] Require N consecutive failures (default 3) before firing an alert. `ALERT_CONFIRM_THRESHOLD_POLLS` configurable.
+- [x] Require M consecutive successes (default 2) before clearing. `ALERT_RECOVERY_THRESHOLD_POLLS` configurable.
+- [x] Enforce minimum state duration (default 10 min / 600s) for worsening transitions only. `ALERT_MIN_STATE_DURATION_SECONDS`.
+- [x] DB columns `pending_status`, `pending_status_count`, `pending_status_since` on `services` (migration 0006).
+- [x] Pure `_update_pending()` state machine — 9 unit tests + 4 integration tests cover single blips, confirmed transitions, target changes mid-stream, and recovery threshold.
+- [ ] "Unstable" UI badge for actively-flapping services — **deferred to Phase 5** (UX). Data exposed via the `pending_*` columns.
 
 ### Dedup
-- [ ] Primary key: `(service_id, vendor_incident_id)` when Statuspage provides it.
-- [ ] Fallback: `(service_id, status, day_bucket)`.
-- [ ] Never dedup on message text.
-- [ ] Table `alert_sent_log(dedup_key, first_sent_at, last_updated_at, slack_ts)` for ack-back linking.
+- [x] `alert_sent_log` table keyed on `dedup_key = vendor:{service_id}:{vendor_incident_id}` or fallback `fallback:{service_id}:{status}:{day}`.
+- [x] Never dedups on message text. `alert_dedup_window_seconds` configurable (default 24h).
+- [x] Recoveries to `operational` bypass dedup — operators always want "it's back" even if they just saw the outage.
+- [x] Suppressed alerts still recorded (with `suppressed_by` reason code) so "why didn't we alert?" is auditable.
+- [ ] `vendor_incident_id` extraction from Statuspage — **deferred** follow-up; fallback day-bucket dedup works today.
 
 ### Severity routing (config-driven)
-Add to `services.yaml`:
-```yaml
-tier: critical | important | informational
-slack_channel: <override, optional>
-owner: <team or person>
-runbook_url: <optional>
-```
-Routing:
-- `critical` → Slack channel + `@here` mention
-- `important` → Slack channel only
-- `informational` → dashboard only (no Slack)
+- [x] `tier` (`critical | important | informational`) + `slack_channel_override` added to `services.yaml`, `ServiceConfig`, and the DB via migration 0006.
+- [x] `okta`, `duo`, `slack` tagged `critical`; everything else defaults to `important` so operators explicitly elect services into the `@here` tier.
+- [x] `route_status_change()` applies routing:
+  - `critical` → Slack + `<!here>` mention
+  - `important` → Slack, no mention
+  - `informational` → dashboard only, no Slack
+- [ ] Per-service `slack_channel_override` → distinct webhook — **deferred**; field exists but routing only uses main webhook today.
 
 ### Dependency correlation
-- [ ] When upstream (e.g., Okta) flips to `down`, emit **one** aggregated alert covering all affected dependents — not N alerts.
-- [ ] Merge subsequent state changes on affected services into the parent incident thread.
+- [x] `find_aggregation_candidates()` groups downstream outages under their upstream when ≥ `dependency_correlation_threshold` (default 3) dependents flip non-operational in the same poll cycle.
+- [x] `build_aggregated_upstream_alert()` renders one Slack message citing up to 20 affected dependents (plus "…and N more").
+- [x] Individual dependent alerts are suppressed (`aggregated_under_upstream`) when rolled into the parent. No 20-alert thundering herd.
 
 ### Maintenance windows (first-class)
-Migration `0006_maintenance_windows.sql`:
-```sql
-CREATE TABLE maintenance_windows (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    service_id TEXT NOT NULL REFERENCES services(id),
-    starts_at DATETIME NOT NULL,
-    ends_at DATETIME NOT NULL,
-    source TEXT NOT NULL, -- manual | vendor_scheduled
-    title TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
-- [ ] Auto-populate from Statuspage `scheduled_maintenances` array.
-- [ ] Alerts suppressed during active windows; state transitions still recorded.
+- [x] Using the existing `scheduled_maintenances` table (from migration 0001) — no new table needed.
+- [x] `is_in_maintenance_window()` normalizes both sides through SQLite's `datetime()` to handle vendor ISO and space-separated timestamps.
+- [x] Alerts during active windows are recorded with `suppressed_by='maintenance_window'` but don't fire. State transitions still captured.
 
-### Ack flow
-- [ ] Slack Block Kit message gains `Acknowledge` / `Snooze 30m` / `Resolve` buttons.
-- [ ] FastAPI callback endpoint `/api/slack/interactivity` (signed secret verification).
-- [ ] Ack auto-expires after 30 min; snooze configurable.
+### Ack flow — DEFERRED to Phase 2B
+Backend schema (`alert_sent_log.acknowledged_at`, `acknowledged_by`, `resolved_at`, `slack_ts`) is in place. The Slack interactivity endpoint + signed-secret verification needs inbound HTTPS reachability (Cloudflare Tunnel, Socket Mode, or exposed ingress) which is a deployment decision. Not shipping half-wired buttons that silently do nothing. Schema is ready when the infra lands.
 
-**Exit criteria:** a vendor flapping 10x in an hour produces zero alerts; Okta down + 20 dependents = one alert; ack clicked in Slack reflects in dashboard.
+### Test coverage added
+- `tests/test_change_detector.py` — 13 new tests (9 state-machine + 4 integration).
+- `tests/test_routing.py` — 23 new tests spanning dedup-key construction, maintenance detection, recent-alert checks, every routing suppression path, `record_alert`, and aggregation candidates.
+
+**Exit criteria met:**
+- Single-poll blip fires zero alerts (`test_single_blip_produces_zero_alerts`).
+- Three consecutive polls confirm a real change (`test_three_polls_confirm_status_change`).
+- Dedup window blocks repeats, recoveries bypass (`test_recent_dedup_suppresses`, `test_recovery_bypasses_dedup`).
+- Upstream down + ≥3 declared dependents = 1 aggregated alert (`test_aggregates_when_threshold_met`).
+- Maintenance window fully suppresses alerts (`test_maintenance_window_suppresses`).
+- Informational-tier services are never Slack-paged (`test_informational_tier_is_suppressed`).
+
+200 tests passing.
 
 ---
 
