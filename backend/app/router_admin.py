@@ -78,7 +78,7 @@ async def update_service_status(
             client_ip=client_ip,
         )
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
     logger.info(
         "Admin update: service=%s new_status=%s by=%s from=%s",

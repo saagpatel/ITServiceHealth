@@ -1,6 +1,5 @@
 """Tests for Phase 4 data lifecycle: pragmas, retention, WAL checkpoint."""
 
-from pathlib import Path
 
 import aiosqlite
 import pytest
@@ -10,7 +9,6 @@ from app.database import (
     checkpoint_wal,
     close_db,
     init_db,
-    run_migrations,
 )
 from app.retention import purge_old_rows
 

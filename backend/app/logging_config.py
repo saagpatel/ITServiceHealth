@@ -15,7 +15,9 @@ rewrite.
 from __future__ import annotations
 
 import logging
+import logging.handlers
 import sys
+from pathlib import Path
 
 import structlog
 
@@ -23,10 +25,17 @@ import structlog
 def configure_logging(
     level: str = "INFO",
     json_format: bool = True,
+    log_file: str | Path | None = None,
 ) -> None:
     """Set up structlog + stdlib logging as a unified JSON pipeline.
 
     Call once at app startup (lifespan). Safe to re-invoke — idempotent.
+
+    When `log_file` is set, writes go to a `WatchedFileHandler` instead of
+    stderr. WatchedFileHandler detects inode changes (from newsyslog
+    rotation) and reopens the file on the next write, so the daemon
+    keeps logging to the current file after rotation instead of
+    silently writing to a deleted inode.
     """
     numeric_level = getattr(logging, level.upper(), logging.INFO)
 
@@ -69,7 +78,15 @@ def configure_logging(
         ],
     )
 
-    handler = logging.StreamHandler(sys.stderr)
+    if log_file is not None:
+        # WatchedFileHandler reopens the file if the inode changes under it,
+        # which is exactly what newsyslog rotation does (rename + create).
+        # FileHandler would keep writing to the deleted inode forever.
+        handler: logging.Handler = logging.handlers.WatchedFileHandler(
+            str(log_file), encoding="utf-8",
+        )
+    else:
+        handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(formatter)
 
     root = logging.getLogger()

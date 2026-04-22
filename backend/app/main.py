@@ -2,8 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -24,9 +23,13 @@ VERSION = "0.1.0"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle: DB init, HTTP client, shutdown."""
-    # Structured logging (JSON to stderr, contextvars support)
+    # Structured logging (JSON to stderr or WatchedFileHandler)
     from app.logging_config import configure_logging
-    configure_logging(level=settings.log_level, json_format=settings.log_json)
+    configure_logging(
+        level=settings.log_level,
+        json_format=settings.log_json,
+        log_file=settings.log_file,
+    )
 
     # Sentry (optional — no-op when SENTRY_DSN is unset)
     from app.observability.sentry_setup import configure_sentry
@@ -107,10 +110,10 @@ app.add_middleware(
 
 # Register routers
 from app.router_admin import router as admin_router  # noqa: E402
-from app.router_services import router as services_router  # noqa: E402
-from app.router_timeline import router as timeline_router  # noqa: E402
-from app.router_summary import router as summary_router  # noqa: E402
 from app.router_reports import router as reports_router  # noqa: E402
+from app.router_services import router as services_router  # noqa: E402
+from app.router_summary import router as summary_router  # noqa: E402
+from app.router_timeline import router as timeline_router  # noqa: E402
 
 app.include_router(admin_router)
 app.include_router(services_router)
@@ -188,8 +191,8 @@ async def health() -> dict:
             try:
                 poll_time = datetime.fromisoformat(row[0])
                 if poll_time.tzinfo is None:
-                    poll_time = poll_time.replace(tzinfo=timezone.utc)
-                now = datetime.now(timezone.utc)
+                    poll_time = poll_time.replace(tzinfo=UTC)
+                now = datetime.now(UTC)
                 poll_age_seconds = int((now - poll_time).total_seconds())
 
                 if poll_age_seconds > 300:

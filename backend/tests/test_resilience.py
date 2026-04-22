@@ -184,7 +184,7 @@ class TestDescribeFetchError:
         assert reason.startswith("circuit_breaker_open")
 
     def test_timeout(self):
-        detail, reason = describe_fetch_error(asyncio.TimeoutError())
+        detail, reason = describe_fetch_error(TimeoutError())
         assert detail == "Poll timeout"
         assert reason == "timeout"
 

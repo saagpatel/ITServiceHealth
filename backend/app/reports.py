@@ -4,9 +4,10 @@ Triggered by change_detector when a service transitions back to operational.
 Uses a 5-minute cooldown to handle flapping services.
 """
 
+import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 import aiosqlite
 
@@ -25,7 +26,7 @@ SEVERITY_RANK = {
 
 async def generate_incident_report(
     db: aiosqlite.Connection,
-    write_lock: "asyncio.Lock",
+    write_lock: asyncio.Lock,
     service_id: str,
     resolved_at: str,
 ) -> dict | None:
@@ -34,7 +35,6 @@ async def generate_incident_report(
     Walks backwards from resolved_at to find the incident start, collects
     all events during the window, computes metrics, and stores the report.
     """
-    import asyncio
 
     # Verify service is still operational (cooldown check)
     cursor = await db.execute(

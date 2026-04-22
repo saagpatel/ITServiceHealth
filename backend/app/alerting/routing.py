@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aiosqlite
 
@@ -49,7 +49,7 @@ class RoutingDecision:
 
 
 def _day_bucket(now: datetime | None = None) -> str:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     return now.strftime("%Y-%m-%d")
 
 
@@ -137,7 +137,7 @@ async def route_status_change(
       maintenance window → dedup → tier → aggregation → fire
     """
     dedup_key = build_dedup_key(change.service_id, change.new_status, vendor_incident_id)
-    tier, channel_override = await get_service_tier(db, change.service_id)
+    tier, _channel_override = await get_service_tier(db, change.service_id)
 
     if aggregated_under:
         return RoutingDecision(

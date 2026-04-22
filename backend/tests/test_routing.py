@@ -5,7 +5,6 @@ import pytest
 from app.alerting.routing import (
     build_dedup_key,
     find_aggregation_candidates,
-    get_service_tier,
     is_in_maintenance_window,
     record_alert,
     route_status_change,

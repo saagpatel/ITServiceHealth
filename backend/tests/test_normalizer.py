@@ -11,7 +11,6 @@ from app.poller.normalizer import (
     normalize_statuspage_indicator,
 )
 
-
 # ── Statuspage.io Component Status ──────────────────────────────────
 
 class TestStatuspageComponent:

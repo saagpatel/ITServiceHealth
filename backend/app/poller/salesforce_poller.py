@@ -40,12 +40,7 @@ async def poll_salesforce(
         return PollResult(status=ServiceStatus.OPERATIONAL, page_name="Salesforce")
 
     # Filter to active incidents (those without a resolved timestamp)
-    active = []
-    for inc in incidents:
-        instance_keys = inc.get("instanceKeys", [])
-        is_resolved = inc.get("isResolved", True)
-        if not is_resolved:
-            active.append(inc)
+    active = [inc for inc in incidents if not inc.get("isResolved", True)]
 
     if not active:
         return PollResult(

@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, gt=0, le=65535)
     log_level: str = "INFO"
+    # Optional path for Python-side file logging. When unset (default),
+    # logs go to stderr so launchd's StandardOutPath redirection handles
+    # rotation. Set this if you want Python to write the file directly —
+    # in that case logging_config uses WatchedFileHandler to survive
+    # newsyslog rotation (rename + create of a new inode).
+    log_file: str | None = None
     seed_demo_data: bool = False
 
     # Admin write endpoints require this token in the Authorization header.

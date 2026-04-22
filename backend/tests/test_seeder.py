@@ -7,8 +7,6 @@ from app.seed import (
     ServiceConfig,
     load_dependencies,
     load_services,
-    seed_dependencies,
-    seed_services,
 )
 
 

@@ -14,6 +14,7 @@ Handles two distinct alert channels:
 
 import asyncio
 import logging
+from datetime import UTC
 
 import aiosqlite
 import httpx
@@ -23,7 +24,6 @@ from app.alerting.routing import (
     record_alert,
     route_status_change,
 )
-from app.observability.metrics import ALERTS_SENT_TOTAL
 from app.alerting.slack import (
     build_aggregated_upstream_alert,
     build_batch_slack_alert,
@@ -34,6 +34,7 @@ from app.alerting.slack import (
 from app.alerting.templates import generate_impact_statement
 from app.config import settings
 from app.dependencies.graph import get_downstream
+from app.observability.metrics import ALERTS_SENT_TOTAL
 from app.poller.change_detector import PollerHealthChange, StatusChange
 
 logger = logging.getLogger(__name__)
@@ -111,9 +112,10 @@ async def process_changes(
         )
         if change.new_status == "operational" and not is_boot_warmup:
             try:
+                from datetime import datetime
+
                 from app.reports import generate_incident_report
-                from datetime import datetime, timezone
-                resolved_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                resolved_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
                 await generate_incident_report(db, write_lock, change.service_id, resolved_at)
             except Exception:
                 logger.exception("Failed to generate incident report for %s", change.service_id)

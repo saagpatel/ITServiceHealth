@@ -1,10 +1,10 @@
 """Shared test fixtures for IT Service Health Dashboard tests."""
 
-import pytest
 import aiosqlite
+import pytest
 
-from app.database import run_migrations
 from app.config import settings
+from app.database import run_migrations
 
 
 @pytest.fixture

@@ -1,0 +1,33 @@
+# Pre-commit hooks — run `pre-commit install` once after cloning.
+# Matches what CI enforces so local commits can't push broken builds.
+#
+# Install locally:
+#   pipx install pre-commit       # or: pip install --user pre-commit
+#   pre-commit install            # adds the hook to .git/hooks/pre-commit
+#   pre-commit run --all-files    # one-time sweep of the whole tree
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.6
+    hooks:
+      # Lint, then auto-format. --fix lets ruff self-heal common issues
+      # so the pre-commit hook doesn't block on a trivial style nit.
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # Allow the launchd plist templates (we don't validate their
+        # .example form as strict YAML — they're actually XML).
+        exclude: ^deploy/.*\.plist\.example$
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: detect-private-key

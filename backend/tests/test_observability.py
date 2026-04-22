@@ -14,16 +14,16 @@ import pytest
 from app.observability import heartbeat
 from app.observability.metrics import (
     BREAKER_STATE_VALUE,
+    CIRCUIT_BREAKER_STATE,
+    POLLER_HEALTH_STATE,
     POLLER_HEALTH_VALUE,
+    SCHEDULER_LAST_HEARTBEAT_SECONDS,
+    SERVICE_STATUS,
     STATUS_VALUE,
     outcome_from_failure_reason,
     record_circuit_breaker_state,
     record_poller_health,
     record_service_status,
-    CIRCUIT_BREAKER_STATE,
-    POLLER_HEALTH_STATE,
-    SCHEDULER_LAST_HEARTBEAT_SECONDS,
-    SERVICE_STATUS,
 )
 from app.observability.sentry_setup import _scrub
 
@@ -157,6 +157,7 @@ class TestObservabilityEndpoints:
     async def app_client(self, tmp_path):
         """Provide a real app + httpx client with a temp DB."""
         from httpx import ASGITransport, AsyncClient
+
         from app.database import close_db, init_db
 
         await init_db(str(tmp_path / "test.db"))

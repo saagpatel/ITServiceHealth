@@ -1,0 +1,89 @@
+# Caddy reverse proxy — HTTPS + basic hardening in front of the FastAPI app.
+#
+# Why Caddy?
+#   - Automatic TLS: self-signed for internal hosts (`tls internal`) or
+#     ACME for routed-to-the-internet deploys. No cert rotation scripts.
+#   - Simple reverse-proxy config, battle-tested.
+#   - Runs alongside the dashboard on the same Mac Mini as a second
+#     launchd daemon; restart story stays trivial.
+#
+# Install:
+#   brew install caddy
+#   cp deploy/Caddyfile.example /opt/it-health/deploy/Caddyfile
+#   $EDITOR /opt/it-health/deploy/Caddyfile        # set your hostname
+#   sudo caddy validate --config /opt/it-health/deploy/Caddyfile
+#   sudo caddy run --config /opt/it-health/deploy/Caddyfile     # or via brew services
+#
+# For production: set up a com.box.it-health-caddy.plist daemon
+# mirroring the Litestream sidecar plist in this directory.
+
+{
+    # Global options
+    email ops@box.example             # ACME registration — change to your ops alias
+    admin off                         # don't expose the Caddy admin API
+}
+
+# UPDATE: replace with your actual internal hostname.
+# Using `tls internal` issues a cert from Caddy's local CA, which your
+# clients will need to trust. For a publicly-routable host, swap for a
+# real domain and ACME handles cert issuance automatically.
+health.box.corp {
+    tls internal
+
+    # Hardening — keep these even for VPN-internal deploys. Attackers
+    # with a VPN foothold are exactly the audience for these headers.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "same-origin"
+        # Remove the Server banner so port scanners learn less
+        -Server
+    }
+
+    # Rate-limit the admin API so a compromised bearer token can't
+    # flood the dashboard with manual status overrides. Caddy's
+    # rate-limiter is basic but enough for a VPN-only deploy;
+    # elevate to something like caddy-ratelimit if you ever need tiers.
+    @admin path /api/admin/*
+    handle @admin {
+        # 30 requests/min/IP is generous for a human operator;
+        # reject beyond with 429.
+        rate_limit {
+            zone admin {
+                key {remote_host}
+                events 30
+                window 1m
+            }
+        }
+        reverse_proxy localhost:8000 {
+            header_up X-Forwarded-For     {remote_host}
+            header_up X-Forwarded-Proto   https
+            header_up X-Real-IP           {remote_host}
+        }
+    }
+
+    # Everything else: straight reverse proxy, preserving the original
+    # client IP so the app's audit trail records the real caller.
+    reverse_proxy localhost:8000 {
+        header_up X-Forwarded-For   {remote_host}
+        header_up X-Forwarded-Proto https
+        header_up X-Real-IP         {remote_host}
+
+        # Short health check — Caddy marks the upstream down on 3 x 5s
+        # failures and serves a 502 until it comes back.
+        health_uri      /healthz
+        health_interval 10s
+        health_timeout  5s
+        health_status   2xx
+    }
+
+    # Structured access log — JSON so it ships into whatever Box uses.
+    log {
+        output file /var/log/it-health/caddy-access.log {
+            roll_size 10mb
+            roll_keep 10
+        }
+        format json
+    }
+}

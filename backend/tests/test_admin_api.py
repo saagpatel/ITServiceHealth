@@ -5,7 +5,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.config import settings
 from app.database import close_db, init_db
-from app.seed import load_dependencies, load_services, seed_dependencies, seed_services
+from app.seed import load_dependencies, load_services
 
 ADMIN_TOKEN = "test-admin-token-xyz"
 AUTH_HEADERS = {"Authorization": f"Bearer {ADMIN_TOKEN}"}

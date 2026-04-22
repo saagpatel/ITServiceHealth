@@ -6,7 +6,7 @@ Handles rate limiting (1 msg/sec) and batching (>3 changes).
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
 import httpx
@@ -32,7 +32,7 @@ def _parse_retry_after(raw: str | None) -> int:
     except ValueError:
         try:
             target = parsedate_to_datetime(raw)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             seconds = int((target - now).total_seconds())
         except (TypeError, ValueError):
             return RETRY_AFTER_DEFAULT
@@ -68,7 +68,7 @@ def build_slack_alert(
     for critical-tier services). Empty strings or None mean no mention.
     """
     emoji = EMOJI_MAP.get(new_status, "\u26ab")
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     impact_body = (
         f"{mention} {impact_statement}".strip() if mention else impact_statement
@@ -127,7 +127,7 @@ def build_batch_slack_alert(
     Args:
         changes: List of (service_name, old_status, new_status, impact_statement, status_page_url).
     """
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     blocks = [
         {
@@ -184,7 +184,7 @@ def build_aggregated_upstream_alert(
     the dependents into one message citing them all.
     """
     emoji = EMOJI_MAP.get(upstream_change.new_status, "\u26ab")
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     dep_names = [d.service_display_name for d in dependents]
 
     impact_body = (
@@ -261,7 +261,7 @@ def build_poller_health_alert(
     responders never mistake it for a vendor-outage alert, even when
     the alert lands in the main Slack channel due to missing config.
     """
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     going_broken = health_change.new_health == "broken"
 
     if going_broken:

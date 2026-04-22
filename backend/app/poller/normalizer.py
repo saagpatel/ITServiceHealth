@@ -1,12 +1,12 @@
 """Normalize vendor-specific status strings to our unified 5-state enum."""
 
 import logging
-from enum import Enum
+from enum import StrEnum
 
 logger = logging.getLogger(__name__)
 
 
-class ServiceStatus(str, Enum):
+class ServiceStatus(StrEnum):
     OPERATIONAL = "operational"
     DEGRADED = "degraded"
     PARTIAL_OUTAGE = "partial_outage"

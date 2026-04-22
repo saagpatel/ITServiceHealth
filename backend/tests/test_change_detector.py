@@ -7,7 +7,6 @@ import pytest
 from app.config import settings
 from app.poller.change_detector import (
     PollerHealthChange,
-    StatusChange,
     _compute_new_health,
     _is_going_worse,
     _update_pending,

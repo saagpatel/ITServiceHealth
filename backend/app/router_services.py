@@ -1,6 +1,6 @@
 """Service API routes: list all services, get service detail with dependencies."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 
@@ -60,7 +60,7 @@ async def get_services_uptime() -> dict:
     db = await get_db()
 
     # Generate the last 7 days
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     days = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
 
     cursor = await db.execute(

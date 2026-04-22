@@ -16,17 +16,17 @@ Phase 3 observability hooks:
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+import structlog
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import structlog
 
 from app.config import settings
 from app.database import get_db, get_write_lock
-from app.observability.metrics import POLL_CYCLES_TOTAL, POLL_DURATION_SECONDS
 from app.observability.heartbeat import heartbeat_tick, update_heartbeat_gauge_continuously
+from app.observability.metrics import POLL_CYCLES_TOTAL, POLL_DURATION_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ def start_scheduler(app) -> None:
         args=[app],
         id="poll_cycle",
         replace_existing=True,
-        next_run_time=datetime.now(timezone.utc),
+        next_run_time=datetime.now(UTC),
     )
 
     # Heartbeat — proves we're alive even when no poll is happening
@@ -81,7 +81,7 @@ def start_scheduler(app) -> None:
         seconds=settings.heartbeat_interval_seconds,
         id="heartbeat",
         replace_existing=True,
-        next_run_time=datetime.now(timezone.utc),
+        next_run_time=datetime.now(UTC),
     )
 
     # Gauge refresher — keeps scheduler_last_heartbeat_seconds accurate for
@@ -162,12 +162,12 @@ async def run_poll_cycle(app) -> None:
             services_by_type.setdefault(svc["poll_type"], []).append(svc)
 
         # Dispatch all poller groups concurrently
-        from app.poller.statuspage_poller import poll_all_statuspage
-        from app.poller.slack_poller import poll_slack
         from app.poller.google_poller import poll_google
-        from app.poller.salesforce_poller import poll_salesforce
-        from app.poller.zendesk_poller import poll_zendesk
         from app.poller.ringcentral_poller import poll_ringcentral
+        from app.poller.salesforce_poller import poll_salesforce
+        from app.poller.slack_poller import poll_slack
+        from app.poller.statuspage_poller import poll_all_statuspage
+        from app.poller.zendesk_poller import poll_zendesk
 
         tasks = []
         task_labels = []

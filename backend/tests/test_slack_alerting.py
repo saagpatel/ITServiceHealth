@@ -1,6 +1,6 @@
 """Tests for Slack alerting helpers (Phase 0: Retry-After parsing)."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 
 from app.alerting.slack import (
@@ -40,13 +40,13 @@ class TestParseRetryAfter:
         assert _parse_retry_after("2.5") == RETRY_AFTER_DEFAULT
 
     def test_http_date_future(self):
-        target = datetime.now(timezone.utc) + timedelta(seconds=15)
+        target = datetime.now(UTC) + timedelta(seconds=15)
         header = format_datetime(target, usegmt=True)
         # Allow 1-2s of slippage between header construction and parse
         result = _parse_retry_after(header)
         assert 10 <= result <= RETRY_AFTER_MAX
 
     def test_http_date_past_returns_default(self):
-        target = datetime.now(timezone.utc) - timedelta(seconds=30)
+        target = datetime.now(UTC) - timedelta(seconds=30)
         header = format_datetime(target, usegmt=True)
         assert _parse_retry_after(header) == RETRY_AFTER_DEFAULT

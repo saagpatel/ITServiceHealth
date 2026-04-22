@@ -10,9 +10,10 @@ of consecutive failures past the configured threshold flips the service
 to `broken`; a single success clears it.
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aiosqlite
 
@@ -187,7 +188,7 @@ def _update_pending(
 
 async def detect_changes(
     db: aiosqlite.Connection,
-    write_lock: "asyncio.Lock",
+    write_lock: asyncio.Lock,
     poll_results: list[tuple[str, PollResult]],
 ) -> tuple[list[StatusChange], list[PollerHealthChange]]:
     """Compare poll results against current DB state and write changes.
@@ -205,13 +206,12 @@ async def detect_changes(
 
     Also upserts scheduled maintenances from statuspage poll results.
     """
-    import asyncio
 
     if not poll_results:
         return [], []
 
     service_ids = [sid for sid, _ in poll_results]
-    now_dt = datetime.now(timezone.utc)
+    now_dt = datetime.now(UTC)
     now = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Batch-read current state including poller-health + flap-suppression trails
@@ -412,7 +412,7 @@ async def detect_changes(
 
 async def apply_manual_update(
     db: aiosqlite.Connection,
-    write_lock: "asyncio.Lock",
+    write_lock: asyncio.Lock,
     service_id: str,
     new_status: ServiceStatus,
     detail: str | None,
@@ -428,9 +428,8 @@ async def apply_manual_update(
 
     Returns StatusChange if status actually changed, None if same status.
     """
-    import asyncio
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     cursor = await db.execute(
         "SELECT id, display_name, current_status, poll_type, status_page_url FROM services WHERE id = ?",

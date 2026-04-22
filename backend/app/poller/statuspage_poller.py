@@ -18,7 +18,6 @@ from app.poller.normalizer import (
     normalize_statuspage_indicator,
 )
 from app.poller.resilience import (
-    CircuitBreakerOpen,
     describe_fetch_error,
     resilient_fetch,
 )

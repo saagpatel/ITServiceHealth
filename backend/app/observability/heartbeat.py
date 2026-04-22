@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Callable
+from collections.abc import Callable
 
 import httpx
 
@@ -69,7 +69,7 @@ async def heartbeat_tick(http_client_factory: Callable[[], httpx.AsyncClient] | 
         # Short timeouts: this is a fire-and-forget ping, not a full poll
         async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
             await client.get(ping_url)
-    except Exception as e:  # noqa: BLE001 — never let a ping failure kill the tick
+    except Exception as e:
         logger.warning("Healthcheck ping failed: %s", e)
 
 
