@@ -2,24 +2,68 @@
 
 Orchestrates statuspage, Slack, and Google pollers, feeds results through
 the change detector, and logs status changes.
+
+Phase 3 observability hooks:
+  - Each poll cycle binds a fresh `poll_cycle_id` contextvar so every
+    log line emitted during the cycle carries it (trace-without-tracing).
+  - `poll_cycles_total{outcome}` counter increments on every cycle.
+  - A separate heartbeat job pings Healthchecks.io + updates the
+    `scheduler_last_heartbeat_seconds` gauge.
+  - APScheduler event listeners log EVENT_JOB_ERROR / EVENT_JOB_MISSED so
+    a silently-dead scheduler becomes visible in metrics + logs.
 """
 
 import asyncio
 import logging
+import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import structlog
 
 from app.config import settings
 from app.database import get_db, get_write_lock
+from app.observability.metrics import POLL_CYCLES_TOTAL, POLL_DURATION_SECONDS
+from app.observability.heartbeat import heartbeat_tick, update_heartbeat_gauge_continuously
 
 logger = logging.getLogger(__name__)
 
-scheduler = AsyncIOScheduler(timezone="UTC")
+scheduler = AsyncIOScheduler(
+    timezone=ZoneInfo("UTC"),
+    job_defaults={
+        # Coalesce drops all-but-one pending run when we wake up late
+        # after a hang, instead of replaying a thundering herd.
+        "coalesce": True,
+        # Never let two poll cycles overlap — a slow cycle gets skipped
+        # rather than racing with the next one.
+        "max_instances": 1,
+        # If the scheduler wakes up within 30s late we still run; more
+        # than 30s late = skip this tick and log it via EVENT_JOB_MISSED.
+        "misfire_grace_time": 30,
+    },
+)
+
+
+def _on_scheduler_event(event) -> None:
+    """Bridge APScheduler events into our logs + metrics."""
+    if event.code == EVENT_JOB_ERROR:
+        logger.error(
+            "APScheduler job %s raised: %s", event.job_id, event.exception,
+        )
+    elif event.code == EVENT_JOB_MISSED:
+        logger.warning(
+            "APScheduler job %s missed its run time at %s",
+            event.job_id, event.scheduled_run_time,
+        )
 
 
 def start_scheduler(app) -> None:
     """Start the poll scheduler with immediate first run."""
+    scheduler.add_listener(_on_scheduler_event, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
+
+    # Poll cycle — the main event
     scheduler.add_job(
         run_poll_cycle,
         "interval",
@@ -27,24 +71,55 @@ def start_scheduler(app) -> None:
         args=[app],
         id="poll_cycle",
         replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=30,
         next_run_time=datetime.now(timezone.utc),
     )
+
+    # Heartbeat — proves we're alive even when no poll is happening
+    scheduler.add_job(
+        heartbeat_tick,
+        "interval",
+        seconds=settings.heartbeat_interval_seconds,
+        id="heartbeat",
+        replace_existing=True,
+        next_run_time=datetime.now(timezone.utc),
+    )
+
+    # Gauge refresher — keeps scheduler_last_heartbeat_seconds accurate for
+    # scrapers between heartbeat ticks.
+    scheduler.add_job(
+        update_heartbeat_gauge_continuously,
+        "interval",
+        seconds=5,
+        id="heartbeat_gauge",
+        replace_existing=True,
+    )
+
     scheduler.start()
-    logger.info("Poll scheduler started (interval=%ds)", settings.poll_interval_seconds)
+    logger.info(
+        "Poll scheduler started (poll=%ds, heartbeat=%ds)",
+        settings.poll_interval_seconds, settings.heartbeat_interval_seconds,
+    )
 
 
 def stop_scheduler() -> None:
     """Stop the poll scheduler."""
     if scheduler.running:
-        scheduler.shutdown(wait=False)
+        scheduler.shutdown(wait=True)
         logger.info("Poll scheduler stopped")
 
 
 async def run_poll_cycle(app) -> None:
-    """Execute one full poll cycle across all automated services."""
+    """Execute one full poll cycle across all automated services.
+
+    Binds `poll_cycle_id` so every log line emitted during the cycle
+    (including from deep inside pollers / change detector / alerting)
+    carries it. Operators grep the JSON log by poll_cycle_id to see
+    every downstream effect of a single tick.
+    """
+    cycle_id = uuid.uuid4().hex[:12]
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(poll_cycle_id=cycle_id)
+
     try:
         client = app.state.http_client
         db = await get_db()
@@ -73,9 +148,16 @@ async def run_poll_cycle(app) -> None:
         tasks = []
         task_labels = []
 
+        def _timed(poll_type: str, coro):
+            """Wrap a poller coroutine to record its wall-clock duration."""
+            async def _runner():
+                with POLL_DURATION_SECONDS.labels(poll_type=poll_type).time():
+                    return await coro
+            return _runner()
+
         statuspage_svcs = services_by_type.get("statuspage_json", [])
         if statuspage_svcs:
-            tasks.append(poll_all_statuspage(client, statuspage_svcs))
+            tasks.append(_timed("statuspage_json", poll_all_statuspage(client, statuspage_svcs)))
             task_labels.append(f"statuspage ({len(statuspage_svcs)} services)")
 
         slack_svcs = services_by_type.get("slack_api", [])
@@ -86,13 +168,13 @@ async def run_poll_cycle(app) -> None:
                 result = await poll_slack(client, svc["poll_url"])
                 return [(svc["id"], result)]
 
-            tasks.append(_poll_slack())
+            tasks.append(_timed("slack_api", _poll_slack()))
             task_labels.append("slack (1 service)")
 
         google_svcs = services_by_type.get("google_json", [])
         if google_svcs:
             url = google_svcs[0]["poll_url"]
-            tasks.append(poll_google(client, url, google_svcs))
+            tasks.append(_timed("google_json", poll_google(client, url, google_svcs)))
             task_labels.append(f"google ({len(google_svcs)} services)")
 
         # Single-service custom pollers
@@ -105,11 +187,12 @@ async def run_poll_cycle(app) -> None:
                 async def _poll_single(s=svc, fn=poller_fn):
                     result = await fn(client, s["poll_url"])
                     return [(s["id"], result)]
-                tasks.append(_poll_single())
+                tasks.append(_timed(poll_type, _poll_single()))
                 task_labels.append(f"{poll_type} ({svc['id']})")
 
         if not tasks:
             logger.warning("No pollable services found")
+            POLL_CYCLES_TOTAL.labels(outcome="completed").inc()
             return
 
         # Run all pollers concurrently
@@ -161,6 +244,10 @@ async def run_poll_cycle(app) -> None:
                 hc.new_health,
                 hc.consecutive_failures,
             )
+        POLL_CYCLES_TOTAL.labels(outcome="completed").inc()
 
     except Exception:
+        POLL_CYCLES_TOTAL.labels(outcome="errored").inc()
         logger.exception("Poll cycle failed unexpectedly")
+    finally:
+        structlog.contextvars.clear_contextvars()

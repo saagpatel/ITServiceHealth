@@ -7,10 +7,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.config import settings
 from app.database import close_db, get_db, init_db
@@ -23,11 +24,13 @@ VERSION = "0.1.0"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle: DB init, HTTP client, shutdown."""
-    # Configure logging
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    # Structured logging (JSON to stderr, contextvars support)
+    from app.logging_config import configure_logging
+    configure_logging(level=settings.log_level, json_format=settings.log_json)
+
+    # Sentry (optional — no-op when SENTRY_DSN is unset)
+    from app.observability.sentry_setup import configure_sentry
+    configure_sentry()
 
     # Initialize database and run migrations
     await init_db()
@@ -114,6 +117,38 @@ app.include_router(services_router)
 app.include_router(timeline_router)
 app.include_router(summary_router)
 app.include_router(reports_router)
+
+
+@app.get("/healthz")
+async def healthz() -> Response:
+    """Dead-man's switch health check.
+
+    Returns 200 iff the scheduler has pinged within the stale window.
+    Supervisors (launchd, Caddy, Healthchecks.io) should hit this; a 503
+    here means the scheduler silently stopped and the process should
+    be restarted. Kept intentionally cheap — one in-memory read.
+    """
+    from app.observability.heartbeat import (
+        get_seconds_since_heartbeat,
+        is_heartbeat_fresh,
+    )
+    age = get_seconds_since_heartbeat()
+    fresh = is_heartbeat_fresh()
+    body = {
+        "status": "ok" if fresh else "stale",
+        "heartbeat_age_seconds": round(age, 1),
+        "threshold_seconds": settings.heartbeat_stale_after_seconds,
+    }
+    return JSONResponse(body, status_code=200 if fresh else 503)
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Prometheus scrape endpoint. Text format, cheap, no auth.
+
+    Keep outside the SPA catch-all so it returns plain text, not index.html.
+    """
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/api/health")

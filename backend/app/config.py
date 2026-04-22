@@ -48,6 +48,25 @@ class Settings(BaseSettings):
     # changes state, emit one aggregated alert instead of one per dependent.
     dependency_correlation_threshold: int = Field(default=3, gt=0, le=100)
 
+    # Observability (Phase 3)
+    # Pretty console output in dev, JSON in prod. JSON is cheap to parse
+    # and preserves contextvars (poll_cycle_id etc.) as first-class fields.
+    log_json: bool = True
+
+    # Sentry DSN — leave unset to disable error tracking entirely.
+    sentry_dsn: HttpUrl | None = None
+    sentry_environment: str = "production"
+    sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    # Dead-man's switch — a URL to GET every 30s to prove the scheduler
+    # is alive. Healthchecks.io and Cronitor both accept a bare URL ping.
+    # Leave unset to disable external dead-man pings.
+    healthcheck_ping_url: HttpUrl | None = None
+    heartbeat_interval_seconds: int = Field(default=30, gt=0, le=600)
+    # /healthz returns 503 when the heartbeat is this stale — launchd (or
+    # whatever supervisor is in front) should then restart the process.
+    heartbeat_stale_after_seconds: int = Field(default=120, gt=0, le=3600)
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, v: str) -> str:
@@ -74,6 +93,14 @@ class Settings(BaseSettings):
             if self.poller_health_slack_webhook_url
             else None
         )
+
+    @property
+    def sentry_dsn_str(self) -> str | None:
+        return str(self.sentry_dsn) if self.sentry_dsn else None
+
+    @property
+    def healthcheck_ping_url_str(self) -> str | None:
+        return str(self.healthcheck_ping_url) if self.healthcheck_ping_url else None
 
     @property
     def services_yaml_path(self) -> Path:

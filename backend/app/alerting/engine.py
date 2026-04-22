@@ -23,6 +23,7 @@ from app.alerting.routing import (
     record_alert,
     route_status_change,
 )
+from app.observability.metrics import ALERTS_SENT_TOTAL
 from app.alerting.slack import (
     build_aggregated_upstream_alert,
     build_batch_slack_alert,
@@ -284,6 +285,9 @@ async def process_poller_health_changes(
                 webhook_url, payload, client=http_client,
             )
             if success:
+                ALERTS_SENT_TOTAL.labels(
+                    kind="poller_health", severity=hc.new_health,
+                ).inc()
                 logger.info(
                     "Sent poller-health alert: %s %s → %s",
                     hc.service_display_name,

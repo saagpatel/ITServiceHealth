@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 import aiosqlite
 
 from app.config import settings
+from app.observability.metrics import ALERTS_SENT_TOTAL, ALERTS_SUPPRESSED_TOTAL
 from app.poller.change_detector import StatusChange
 
 logger = logging.getLogger(__name__)
@@ -237,6 +238,16 @@ async def record_alert(
             decision.suppressed_by,
         ),
     )
+
+    # Mirror into Prometheus so operators can scrape alert hygiene trends
+    if decision.suppressed_by:
+        ALERTS_SUPPRESSED_TOTAL.labels(
+            kind=alert_kind, reason=decision.suppressed_by,
+        ).inc()
+    else:
+        ALERTS_SENT_TOTAL.labels(
+            kind=alert_kind, severity=decision.tier,
+        ).inc()
 
 
 # ── Dependency correlation ──────────────────────────────────────────

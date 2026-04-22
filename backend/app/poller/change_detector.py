@@ -17,6 +17,12 @@ from datetime import datetime, timezone
 import aiosqlite
 
 from app.config import settings
+from app.observability.metrics import (
+    POLL_TOTAL,
+    outcome_from_failure_reason,
+    record_poller_health,
+    record_service_status,
+)
 from app.poller.normalizer import ServiceStatus
 from app.poller.statuspage_poller import PollResult
 
@@ -244,6 +250,13 @@ async def detect_changes(
                 prev_health, new_failures, poll_succeeded, threshold,
             )
 
+            # Metrics: outcome of this poll + current poller-health gauge
+            POLL_TOTAL.labels(
+                service=service_id,
+                outcome=outcome_from_failure_reason(poll_result.poll_failure_reason),
+            ).inc()
+            record_poller_health(service_id, new_health)
+
             # Only emit health changes for broken transitions — the signal
             # we want operators to see in #poller-health.
             if prev_health != "broken" and new_health == "broken":
@@ -334,6 +347,7 @@ async def detect_changes(
             if decision.promoted_status:
                 # Confirmed state transition — flip current_status + insert event
                 new_status = decision.promoted_status
+                record_service_status(service_id, new_status)
                 await db.execute(
                     """UPDATE services
                        SET current_status = ?, current_status_detail = ?,

@@ -28,6 +28,8 @@ import stamina
 from purgatory import AsyncCircuitBreakerFactory
 from purgatory.domain.model import OpenedState
 
+from app.observability.metrics import record_circuit_breaker_state
+
 logger = logging.getLogger(__name__)
 
 # HTTP status codes that indicate a transient server-side problem worth retrying.
@@ -69,6 +71,20 @@ _breaker_threshold: int = DEFAULT_BREAKER_THRESHOLD
 _breaker_ttl: float = DEFAULT_BREAKER_TTL_SECONDS
 
 
+def _on_breaker_event(name: str, event_type: str, event) -> None:
+    """Mirror purgatory state transitions into the Prometheus gauge.
+
+    purgatory dispatches events as (name, event_type, event). We only
+    care about `state_changed` events — the others carry redundant info.
+    State values are 'opened', 'closed', 'half-opened'; normalize the
+    hyphen to underscore to match the label registered in metrics.py.
+    """
+    if event_type != "state_changed":
+        return
+    state_label = getattr(event, "state", "closed").replace("-", "_")
+    record_circuit_breaker_state(name, state_label)
+
+
 def configure_breakers(
     threshold: int = DEFAULT_BREAKER_THRESHOLD,
     ttl_seconds: float = DEFAULT_BREAKER_TTL_SECONDS,
@@ -85,6 +101,8 @@ def configure_breakers(
         default_threshold=threshold,
         default_ttl=ttl_seconds,
     )
+    # Subscribe to state-change events so metrics stay in sync with reality
+    _breaker_factory.add_listener(_on_breaker_event)
 
 
 def reset_breakers() -> None:
