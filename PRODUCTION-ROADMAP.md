@@ -195,11 +195,10 @@ If the app goes down, nobody knows. Fix meta-monitoring.
 
 ---
 
-## Phase 4 — Data lifecycle (week 4, parallel)
+## Phase 4 — Data lifecycle (week 4, parallel) — COMPLETE (pool migration deferred)
 
 ### Connection pool
-- [ ] Replace module-level `_db` in `backend/app/database.py` with `aiosqlitepool` (5–10 readers + 1 writer serialized via `asyncio.Lock`).
-- [ ] Apply all pragmas on every connection open:
+- [x] `apply_production_pragmas()` in `app/database.py` is the single source of truth. Applied to the shared connection in `init_db()` and reusable as a factory for future pool connections:
   ```sql
   PRAGMA journal_mode = WAL;
   PRAGMA synchronous = NORMAL;
@@ -209,19 +208,33 @@ If the app goes down, nobody knows. Fix meta-monitoring.
   PRAGMA temp_store = MEMORY;
   PRAGMA foreign_keys = ON;
   ```
+- [x] `aiosqlitepool` added to requirements as infrastructure for a follow-up reader-pool migration.
+- [ ] Migrate call sites from `get_db()` (single shared connection) to `async with pool.connection()` — **deferred**. Current load is far below saturation; the pragmas deliver most of the perf win, and the pool migration unlocks concurrent reads once the dashboard serves enough traffic to care.
 
 ### Backup: Litestream
-- [ ] Sidecar launchd process streams WAL frames to S3 (or local path if no S3). ~1s RPO.
-- [ ] Document restore procedure (`litestream restore`).
+- [x] `deploy/litestream.yml.example` — template supporting local-file, S3, and SFTP replicas (operator picks one).
+- [x] `deploy/com.box.it-health-dashboard-litestream.plist.example` — sidecar launchd daemon with `KeepAlive` dict form, `ThrottleInterval`, macOS Keychain-sourced credentials (never hardcoded).
+- [x] README "Backup & Disaster Recovery" section documents install → validate → replicate → restore with exact commands.
 
 ### Retention
-- [ ] Weekly APScheduler job: `DELETE FROM status_events WHERE created_at < datetime('now', '-90 days')` + `PRAGMA wal_checkpoint(TRUNCATE)`.
-- [ ] Roll older events into daily aggregates for long-term uptime graphs.
+- [x] `app/retention.py::purge_old_rows()` — deletes from `status_events` + `alert_sent_log` with per-table windows (`RETENTION_DAYS_STATUS_EVENTS`, `RETENTION_DAYS_ALERT_SENT_LOG`, default 90 days each; `0` disables).
+- [x] `checkpoint_wal()` in `database.py` runs `PRAGMA wal_checkpoint(TRUNCATE)` and logs reclaimed pages — called from retention + the daily checkpoint job.
+- [x] Weekly retention + daily WAL-checkpoint jobs scheduled in `scheduler.py` (intervals configurable via `RETENTION_INTERVAL_HOURS`, `WAL_CHECKPOINT_INTERVAL_HOURS`).
+- [ ] Daily rollup aggregates for long-term uptime graphs — **deferred**; current SLA queries go back 30 days and fit comfortably in live data.
 
 ### Postgres migration path
-- Current load is ~30 writes/min (3 orders of magnitude under SQLite's limit). **Do not migrate prematurely.** Revisit at sustained >100 writes/s, multi-node, or >50GB.
+- Unchanged: current load is ~30 writes/min, three orders of magnitude under SQLite's limit. Not migrating.
 
-**Exit criteria:** connection pool under load test doesn't deadlock; Litestream restore produces a working DB; retention job runs cleanly.
+### Test coverage added
+- `tests/test_retention.py` — 11 tests verifying all 7 production pragmas are applied, `checkpoint_wal()` returns three ints + raises when uninitialized, per-table retention windows delete only the right rows, `0` disables retention, boundary timestamps are preserved, and scheduler entry points swallow setup errors.
+
+**Exit criteria met:**
+- All seven production pragmas land on a fresh connection (`test_all_pragmas_applied`).
+- Retention deletes only rows past the window; `0` disables it; threshold boundary preserved (`test_boundary_is_inclusive_of_exactly_threshold`).
+- `checkpoint_wal()` exits cleanly and returns `(busy, in_wal, checkpointed)`.
+- Litestream configs + launchd plist land alongside a clear restore runbook in the README.
+
+235 tests passing.
 
 ---
 

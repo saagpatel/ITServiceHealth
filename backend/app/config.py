@@ -67,6 +67,16 @@ class Settings(BaseSettings):
     # whatever supervisor is in front) should then restart the process.
     heartbeat_stale_after_seconds: int = Field(default=120, gt=0, le=3600)
 
+    # Data lifecycle (Phase 4)
+    # Rows older than this are purged weekly. Set to 0 to disable retention.
+    retention_days_status_events: int = Field(default=90, ge=0, le=3650)
+    retention_days_alert_sent_log: int = Field(default=90, ge=0, le=3650)
+    # How often the scheduler runs retention + checkpoint. Retention is
+    # cheap enough that running weekly is fine; WAL checkpoints need to
+    # happen more often to stop the -wal file from growing without bound.
+    retention_interval_hours: int = Field(default=168, gt=0, le=8760)  # 1 week
+    wal_checkpoint_interval_hours: int = Field(default=24, gt=0, le=168)
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, v: str) -> str:

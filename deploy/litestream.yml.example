@@ -1,0 +1,45 @@
+# Litestream configuration — streams SQLite WAL frames to an external replica
+# so the dashboard's data survives a Mac Mini failure.
+#
+# Install:   brew install benbjohnson/litestream/litestream
+# Validate:  litestream validate -config deploy/litestream.yml
+# Replicate: litestream replicate -config deploy/litestream.yml
+#
+# The replicate command is a long-running process — run it as a dedicated
+# launchd daemon (see com.box.it-health-dashboard-litestream.plist.example)
+# so it stays up alongside the main app.
+#
+# Copy this file to deploy/litestream.yml and fill in the `replicas`
+# section for whichever destination you support (S3, SFTP, or local disk).
+
+dbs:
+  - path: /opt/it-health/data.db          # must match DATABASE_PATH
+    replicas:
+      # ─── Local replica (simplest) ───────────────────────────────────
+      # Good for a second disk on the Mac Mini or an NFS mount. Survives
+      # a single-disk failure but NOT a Mac Mini failure.
+      - type: file
+        path: /opt/it-health/backups/data-replica
+        retention: 168h                  # keep 7 days of snapshots
+        snapshot-interval: 24h
+
+      # ─── S3 (recommended for real production) ───────────────────────
+      # Uncomment and fill in once an S3 bucket + IAM credentials exist.
+      # Needs AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in the env (via
+      # the launchd plist) — never hardcode credentials in this file.
+      #
+      # - type: s3
+      #   bucket: box-it-health-backups
+      #   path: dashboards/it-health.db
+      #   region: us-west-2
+      #   retention: 720h                # 30 days
+      #   snapshot-interval: 24h
+
+      # ─── SFTP (alternative when S3 isn't an option) ────────────────
+      # - type: sftp
+      #   host: backup-host.corp
+      #   user: backups
+      #   path: /backups/it-health.db
+      #   key-path: /Users/it-health/.ssh/litestream
+      #   retention: 720h
+      #   snapshot-interval: 24h

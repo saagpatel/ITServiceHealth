@@ -121,6 +121,21 @@ Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`, `un
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `ADMIN_API_TOKEN` | _(none)_ | Bearer token required for `/api/admin/*` endpoints. If unset, admin endpoints refuse all requests. |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated list of allowed CORS origins |
+| `POLLER_HEALTH_SLACK_WEBHOOK_URL` | _(none)_ | Separate webhook for poller-health alerts. Falls back to `SLACK_WEBHOOK_URL` when unset. |
+| `ALERT_CONFIRM_THRESHOLD_POLLS` | `3` | Consecutive polls required before firing a worsening alert (flap suppression) |
+| `ALERT_RECOVERY_THRESHOLD_POLLS` | `2` | Consecutive successes required before firing a recovery alert |
+| `ALERT_MIN_STATE_DURATION_SECONDS` | `600` | Minimum dwell time (seconds) for worsening transitions |
+| `ALERT_DEDUP_WINDOW_SECONDS` | `86400` | Dedup window for repeat alerts on the same dedup key |
+| `DEPENDENCY_CORRELATION_THRESHOLD` | `3` | Min affected dependents before emitting one aggregated upstream alert |
+| `LOG_JSON` | `true` | JSON structured logging vs pretty console |
+| `SENTRY_DSN` | _(none)_ | Enable Sentry error tracking when set |
+| `HEALTHCHECK_PING_URL` | _(none)_ | Healthchecks.io (or similar) URL pinged by the heartbeat job |
+| `HEARTBEAT_INTERVAL_SECONDS` | `30` | How often the heartbeat job marks itself alive |
+| `HEARTBEAT_STALE_AFTER_SECONDS` | `120` | `/healthz` returns 503 past this threshold |
+| `RETENTION_DAYS_STATUS_EVENTS` | `90` | Auto-purge `status_events` rows older than this (0 = disable) |
+| `RETENTION_DAYS_ALERT_SENT_LOG` | `90` | Auto-purge `alert_sent_log` rows older than this (0 = disable) |
+| `RETENTION_INTERVAL_HOURS` | `168` | How often the retention job runs |
+| `WAL_CHECKPOINT_INTERVAL_HOURS` | `24` | How often the truncating WAL checkpoint runs |
 
 Copy `.env.example` to `.env` and configure:
 ```bash
@@ -179,6 +194,60 @@ sudo launchctl bootstrap system /Library/LaunchDaemons/com.box.it-health-dashboa
 tail -f /var/log/it-health-dashboard.log
 ```
 
+## Backup & Disaster Recovery (Litestream)
+
+SQLite is the primary store; [Litestream](https://litestream.io) streams WAL frames to an external replica (S3, SFTP, or a second disk) so the dashboard survives a Mac Mini failure.
+
+### Setup
+
+```bash
+# 1. Install the binary
+brew install benbjohnson/litestream/litestream
+
+# 2. Customize the config template (pick one replica destination)
+cp deploy/litestream.yml.example /opt/it-health/deploy/litestream.yml
+$EDITOR /opt/it-health/deploy/litestream.yml
+
+# 3. Validate the config before loading it
+litestream validate -config /opt/it-health/deploy/litestream.yml
+
+# 4. Install the sidecar launchd daemon
+cp deploy/com.box.it-health-dashboard-litestream.plist.example \
+   /Library/LaunchDaemons/com.box.it-health-dashboard-litestream.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.box.it-health-dashboard-litestream.plist
+
+# 5. Confirm replication is working
+litestream snapshots -config /opt/it-health/deploy/litestream.yml
+```
+
+Litestream RPO is ~1 second — after the initial snapshot, every WAL frame ships as it's written.
+
+### Restore
+
+```bash
+# 1. Stop the main app so the DB isn't being written to
+sudo launchctl bootout system/com.box.it-health-dashboard
+
+# 2. Restore from replica (picks up the latest snapshot + WAL frames)
+litestream restore -config /opt/it-health/deploy/litestream.yml \
+                   -o /opt/it-health/data.db \
+                   /opt/it-health/data.db
+
+# 3. Start the app — it applies pending migrations on boot and resumes polling
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.box.it-health-dashboard.plist
+```
+
+### Data retention
+
+The dashboard auto-prunes old rows to keep the DB from growing without bound:
+
+| Table | Default retention | Env var |
+|-------|------------------|---------|
+| `status_events` | 90 days | `RETENTION_DAYS_STATUS_EVENTS` |
+| `alert_sent_log` | 90 days | `RETENTION_DAYS_ALERT_SENT_LOG` |
+
+The retention job runs every `RETENTION_INTERVAL_HOURS` (default 168 = weekly) and a truncating WAL checkpoint runs every `WAL_CHECKPOINT_INTERVAL_HOURS` (default 24) so deleted rows actually reclaim disk. Set any retention window to `0` to keep data forever.
+
 ## API Endpoints
 
 | Endpoint | Method | Description |
@@ -189,7 +258,9 @@ tail -f /var/log/it-health-dashboard.log
 | `/api/timeline` | GET | Recent status change events |
 | `/api/summary` | GET | Overall health + active incidents |
 | `/api/maintenance` | GET | Upcoming scheduled maintenances |
-| `/api/admin/status` | POST | Manual status update |
+| `/api/admin/status` | POST | Manual status update (requires `Authorization: Bearer $ADMIN_API_TOKEN`) |
+| `/healthz` | GET | Dead-man's switch — 200 fresh / 503 stale. Hit by launchd + Healthchecks.io. |
+| `/metrics` | GET | Prometheus text exposition. |
 
 ## What's Next
 

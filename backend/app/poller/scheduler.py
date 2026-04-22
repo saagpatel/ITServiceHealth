@@ -94,10 +94,34 @@ def start_scheduler(app) -> None:
         replace_existing=True,
     )
 
+    # WAL checkpoint — runs more often than retention so the -wal sidecar
+    # file doesn't grow without bound between weekly retention passes.
+    from app.retention import scheduled_retention_tick, scheduled_wal_checkpoint_tick
+    scheduler.add_job(
+        scheduled_wal_checkpoint_tick,
+        "interval",
+        hours=settings.wal_checkpoint_interval_hours,
+        id="wal_checkpoint",
+        replace_existing=True,
+    )
+
+    # Retention — weekly by default, purges rows older than the configured
+    # per-table windows and runs a truncating checkpoint to reclaim disk.
+    scheduler.add_job(
+        scheduled_retention_tick,
+        "interval",
+        hours=settings.retention_interval_hours,
+        id="retention",
+        replace_existing=True,
+    )
+
     scheduler.start()
     logger.info(
-        "Poll scheduler started (poll=%ds, heartbeat=%ds)",
-        settings.poll_interval_seconds, settings.heartbeat_interval_seconds,
+        "Poll scheduler started (poll=%ds, heartbeat=%ds, checkpoint=%dh, retention=%dh)",
+        settings.poll_interval_seconds,
+        settings.heartbeat_interval_seconds,
+        settings.wal_checkpoint_interval_hours,
+        settings.retention_interval_hours,
     )
 
 
