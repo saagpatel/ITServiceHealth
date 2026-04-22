@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Litestream sidecar launchd plist — copy to
+  /Library/LaunchDaemons/com.box.it-health-dashboard-litestream.plist,
+  fill in the paths, then:
+
+    sudo launchctl bootstrap system /Library/LaunchDaemons/com.box.it-health-dashboard-litestream.plist
+
+  This daemon runs alongside the main app; it continuously streams WAL
+  frames from data.db to whichever replicas litestream.yml names.
+
+  Verify it's replicating:
+    litestream snapshots -config /opt/it-health/deploy/litestream.yml
+
+  Restore after a loss (run on a fresh Mac Mini or disk):
+    litestream restore -config /opt/it-health/deploy/litestream.yml \
+                       -o /opt/it-health/data.db \
+                       /opt/it-health/data.db
+    # then start the main app as usual — it picks up the restored DB on init
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.box.it-health-dashboard-litestream</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/litestream</string>
+        <string>replicate</string>
+        <string>-config</string>
+        <string>/opt/it-health/deploy/litestream.yml</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/opt/it-health</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on crash, but NOT on clean exit (avoids masking config bugs) -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key><false/>
+        <key>Crashed</key><true/>
+    </dict>
+
+    <!-- Prevent crash-loop pegging the CPU -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/it-health/litestream.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/it-health/litestream.err</string>
+
+    <!-- Only needed for the S3 replica — pull creds from the macOS keychain
+         with `security find-generic-password -s it-health-s3 -a access-key -w`
+         rather than hardcoding them here. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin</string>
+        <!-- <key>AWS_ACCESS_KEY_ID</key><string>...</string> -->
+        <!-- <key>AWS_SECRET_ACCESS_KEY</key><string>...</string> -->
+    </dict>
+
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
+    </dict>
+</dict>
+</plist>

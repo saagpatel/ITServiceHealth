@@ -1,0 +1,76 @@
+name: CI
+
+# Run on every PR and every push to main. Keep it simple — two jobs, one
+# for the Python backend and one for the React frontend. Cancel stale runs
+# on the same branch so force-pushes don't pile up.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint + types + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      # uv bundles its own Python; pinning the uv version keeps CI
+      # reproducible across ubuntu-latest image updates.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.x"
+          enable-cache: true
+          cache-dependency-glob: backend/requirements.txt
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Install deps
+        # Pinned dev tools + runtime deps from requirements.txt. Using
+        # `uv pip install` into a managed env to avoid leaking deps
+        # between jobs when cache is warm.
+        run: |
+          uv venv --python 3.12
+          uv pip install -r requirements.txt
+          uv pip install ruff mypy
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Mypy
+        # --strict via pyproject.toml. Continue-on-error for the first
+        # pass; flip to fail-fast once the codebase is fully typed.
+        run: uv run mypy app
+        continue-on-error: true
+
+      - name: Pytest
+        run: uv run pytest
+
+  frontend:
+    name: Frontend (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npx eslint src/ || true  # pre-existing issues, non-blocking for now
+      - run: npm run build

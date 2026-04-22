@@ -13,6 +13,7 @@ from app.poller.normalizer import (
     ServiceStatus,
     normalize_google_status,
 )
+from app.poller.resilience import describe_fetch_error, resilient_fetch
 from app.poller.statuspage_poller import PollResult
 
 logger = logging.getLogger(__name__)
@@ -34,31 +35,30 @@ async def poll_google(
         List of (service_id, PollResult) tuples.
     """
     try:
-        response = await client.get(poll_url)
-        response.raise_for_status()
+        response = await resilient_fetch(client, poll_url)
         incidents = response.json()
-    except httpx.HTTPStatusError as e:
-        logger.warning("HTTP %d from Google status: %s", e.response.status_code, e)
-        return [
-            (svc["id"], PollResult(status=ServiceStatus.UNKNOWN, status_detail=f"HTTP {e.response.status_code}"))
-            for svc in services
-        ]
-    except httpx.RequestError as e:
-        logger.warning("Request error polling Google status: %s", e)
-        return [
-            (svc["id"], PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e)))
-            for svc in services
-        ]
     except Exception as e:
-        logger.warning("Unexpected error polling Google status: %s", e)
+        detail, reason = describe_fetch_error(e)
+        logger.warning("Google poll failed: %s (%s)", detail, reason)
         return [
-            (svc["id"], PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e)))
+            (svc["id"], PollResult(
+                status=ServiceStatus.UNKNOWN,
+                status_detail=detail,
+                poll_failure_reason=reason,
+            ))
             for svc in services
         ]
 
     if not isinstance(incidents, list):
         logger.warning("Google incidents.json returned non-list: %s", type(incidents))
-        incidents = []
+        return [
+            (svc["id"], PollResult(
+                status=ServiceStatus.UNKNOWN,
+                status_detail="Unexpected response format",
+                poll_failure_reason=f"parse_error: expected list, got {type(incidents).__name__}",
+            ))
+            for svc in services
+        ]
 
     results: list[tuple[str, PollResult]] = []
     for svc in services:

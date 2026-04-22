@@ -1,139 +1,45 @@
 """Alerting engine: orchestrates impact statement generation and Slack notifications.
 
 Called after detect_changes() in the poll cycle and after manual status updates.
+Handles two distinct alert channels:
 
-Alert fatigue prevention:
-- Debounce: degraded/partial_outage must persist for 2+ poll cycles (120s) before alerting.
-  If the service recovers within the debounce window, zero alerts are sent.
-- Immediate: major_outage bypasses debounce and alerts instantly.
-- Cascade grouping: when multiple services recover simultaneously and share an upstream
-  dependency, they are grouped into a single "X recovered, N downstream restored" message.
-- Boot warmup suppression: unknown→operational transitions are never alerted.
-- Maintenance suppression: services with active maintenance windows are not alerted.
+- **Vendor-outage alerts** (`process_changes`): a service the IT team cares
+  about changed status. Routed to the primary Slack webhook.
+- **Poller-health alerts** (`process_poller_health_changes`): *our* poller
+  is broken or recovered. Routed to a separate webhook so responders can
+  tell "we're blind" from "vendor is down" at a glance. Falls back to the
+  primary webhook when the dedicated one is not configured, but tags the
+  message as poller-health so it's never mistaken for a vendor outage.
 """
 
 import asyncio
 import logging
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC
 
 import aiosqlite
 import httpx
 
+from app.alerting.routing import (
+    find_aggregation_candidates,
+    record_alert,
+    route_status_change,
+)
 from app.alerting.slack import (
+    build_aggregated_upstream_alert,
     build_batch_slack_alert,
-    build_cascade_recovery_alert,
+    build_poller_health_alert,
     build_slack_alert,
     send_slack_alert,
 )
 from app.alerting.templates import generate_impact_statement
 from app.config import settings
-from app.dependencies.graph import get_downstream, get_upstream
-from app.poller.change_detector import StatusChange
+from app.dependencies.graph import get_downstream
+from app.observability.metrics import ALERTS_SENT_TOTAL
+from app.poller.change_detector import PollerHealthChange, StatusChange
 
 logger = logging.getLogger(__name__)
 
 BATCH_THRESHOLD = 3
-DEBOUNCE_SECONDS = 120  # 2 poll cycles at 60s interval
-IMMEDIATE_STATUSES = {"major_outage"}
-
-
-@dataclass
-class PendingAlert:
-    """A status change waiting out its debounce window."""
-
-    change: StatusChange
-    first_seen: datetime
-    impact: str
-
-
-# Module-level debounce state: service_id → PendingAlert
-_pending_alerts: dict[str, PendingAlert] = {}
-
-
-def flush_matured_alerts() -> list[tuple[str, str, str, str, str | None]]:
-    """Return alerts that have aged past the debounce window. Removes them from pending."""
-    now = datetime.now(timezone.utc)
-    matured: list[tuple[str, str, str, str, str | None]] = []
-    expired_keys: list[str] = []
-
-    for service_id, pending in _pending_alerts.items():
-        age = (now - pending.first_seen).total_seconds()
-        if age >= DEBOUNCE_SECONDS:
-            c = pending.change
-            matured.append((
-                c.service_display_name,
-                c.previous_status,
-                c.new_status,
-                pending.impact,
-                c.status_page_url,
-            ))
-            expired_keys.append(service_id)
-            logger.info(
-                "Debounce matured for %s (%s) after %ds",
-                c.service_display_name, c.new_status, int(age),
-            )
-
-    for key in expired_keys:
-        del _pending_alerts[key]
-
-    return matured
-
-
-async def group_cascade_recoveries(
-    db: aiosqlite.Connection,
-    recoveries: list[tuple[str, str, str, str, str | None]],
-) -> tuple[list[tuple[str, str, str, str, str | None]], list[dict]]:
-    """Group recovery alerts that share an upstream dependency.
-
-    Returns (individual_alerts, grouped_alerts) where grouped_alerts are dicts
-    with upstream_name and downstream_names for the cascade message builder.
-    """
-    if len(recoveries) < 2:
-        return recoveries, []
-
-    # Map service names to find upstream dependencies
-    # Build: upstream_name → [list of recovering service names]
-    recovering_names = {name for name, _, _, _, _ in recoveries}
-    upstream_groups: dict[str, list[str]] = {}  # upstream_name → downstream names
-
-    for name, old, new, impact, url in recoveries:
-        # Find this service's upstream deps
-        # We need service_id but only have name — query DB
-        cursor = await db.execute(
-            "SELECT id FROM services WHERE display_name = ?", (name,)
-        )
-        row = await cursor.fetchone()
-        if not row:
-            continue
-
-        upstreams = await get_upstream(db, row[0])
-        for up in upstreams:
-            up_name = up["service_name"]
-            if up_name in recovering_names and up_name != name:
-                if up_name not in upstream_groups:
-                    upstream_groups[up_name] = []
-                upstream_groups[up_name].append(name)
-
-    # Only group if upstream has 2+ downstream recoveries
-    grouped_downstreams: set[str] = set()
-    grouped_alerts: list[dict] = []
-
-    for upstream_name, downstream_names in upstream_groups.items():
-        if len(downstream_names) >= 2:
-            grouped_alerts.append({
-                "upstream_name": upstream_name,
-                "downstream_names": downstream_names,
-            })
-            grouped_downstreams.update(downstream_names)
-            grouped_downstreams.add(upstream_name)
-
-    # Individual recoveries = those not part of any cascade group
-    individual = [
-        r for r in recoveries if r[0] not in grouped_downstreams
-    ]
-
-    return individual, grouped_alerts
 
 
 async def process_changes(
@@ -142,30 +48,43 @@ async def process_changes(
     changes: list[StatusChange],
     http_client: httpx.AsyncClient | None = None,
 ) -> None:
-    """Process status changes: generate impact statements, update DB, send Slack alerts.
+    """Process status changes: generate impact statements, route, and alert.
 
-    Two-phase alerting:
-    Phase A: For each change, generate impact, write to DB, classify into alert buckets.
-    Phase B: Flush matured debounce alerts, apply cascade grouping, send all alerts.
+    Pipeline per change:
+      1. Generate impact statement (dependency graph + templates).
+      2. Write impact_statement back to the status_events row.
+      3. Generate an incident report on recovery.
+      4. Route through `alert_sent_log` (maintenance, dedup, tier).
+      5. If upstream-down caused >= N dependents to flip, consolidate
+         their individual alerts into one aggregated upstream alert.
+      6. Send the Slack payload with the appropriate mention (@here for
+         critical tier, no mention otherwise).
     """
     if not changes:
         return
 
-    immediate_alerts: list[tuple[str, str, str, str, str | None]] = []
-    recovery_alerts: list[tuple[str, str, str, str, str | None]] = []
+    # Dependency correlation: group downstream changes under upstream
+    # parent changes when the configured threshold is met.
+    aggregation = await find_aggregation_candidates(
+        db, changes, threshold=settings.dependency_correlation_threshold,
+    )
+    aggregated_under: dict[str, str] = {}
+    for upstream_id, dependents in aggregation.items():
+        upstream_change = next(c for c in changes if c.service_id == upstream_id)
+        for dep in dependents:
+            aggregated_under[dep.service_id] = upstream_change.service_display_name
 
-    # ── Phase A: Process each change ──────────────────────────────────
-
+    # Generate + persist impact statements + incident reports
+    impact_by_service: dict[str, str] = {}
     for change in changes:
-        # Generate impact statement
         try:
             downstream = await get_downstream(db, change.service_id)
             impact = generate_impact_statement(change, downstream)
         except Exception:
             logger.exception("Failed to generate impact for %s", change.service_id)
             impact = f"{change.service_display_name} status changed."
+        impact_by_service[change.service_id] = impact
 
-        # Write impact_statement to status_events
         try:
             async with write_lock:
                 if change.event_id:
@@ -187,142 +106,202 @@ async def process_changes(
         except Exception:
             logger.exception("Failed to write impact_statement for %s", change.service_id)
 
-        # Generate incident report on recovery (non-boot)
         is_boot_warmup = (
             change.previous_status == "unknown"
             and change.new_status == "operational"
         )
         if change.new_status == "operational" and not is_boot_warmup:
             try:
-                from app.reports import generate_incident_report
+                from datetime import datetime
 
-                resolved_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                from app.reports import generate_incident_report
+                resolved_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
                 await generate_incident_report(db, write_lock, change.service_id, resolved_at)
             except Exception:
                 logger.exception("Failed to generate incident report for %s", change.service_id)
 
-        # ── Classify into alert buckets ───────────────────────────────
-        if is_boot_warmup:
-            continue
-
-        # Check maintenance suppression
-        in_maintenance = False
-        try:
-            cursor = await db.execute(
-                """SELECT 1 FROM scheduled_maintenances
-                   WHERE service_id = ? AND status IN ('in_progress', 'verifying')
-                   LIMIT 1""",
-                (change.service_id,),
-            )
-            in_maintenance = await cursor.fetchone() is not None
-        except Exception:
-            logger.debug("Failed to check maintenance status for %s", change.service_id)
-
-        if in_maintenance:
-            logger.info(
-                "Suppressing alert for %s — active maintenance window",
-                change.service_display_name,
-            )
-            continue
-
-        alert_tuple = (
-            change.service_display_name,
-            change.previous_status,
-            change.new_status,
-            impact,
-            change.status_page_url,
+    # Route every change; suppressed alerts still record to alert_sent_log
+    # so operators can audit "why didn't we alert on X?".
+    individual_sends: list[tuple[StatusChange, str]] = []
+    for change in changes:
+        is_boot_warmup = (
+            change.previous_status == "unknown"
+            and change.new_status == "operational"
         )
+        if is_boot_warmup:
+            # Still record the state transition, but don't alert — a service
+            # resolving from unknown to operational just means the poller
+            # warmed up; it's not real news.
+            continue
 
-        # Immediate: major_outage bypasses debounce
-        if change.new_status in IMMEDIATE_STATUSES:
-            # Clear any pending debounce for this service (it escalated)
-            _pending_alerts.pop(change.service_id, None)
-            immediate_alerts.append(alert_tuple)
+        decision = await route_status_change(
+            db, change, aggregated_under=aggregated_under.get(change.service_id),
+        )
+        async with write_lock:
+            await record_alert(db, change, decision)
+            await db.commit()
 
-        # Recovery: check if this cancels a pending debounce (flap suppression)
-        elif change.new_status == "operational":
-            if change.service_id in _pending_alerts:
-                pending = _pending_alerts.pop(change.service_id)
-                logger.info(
-                    "Flap suppressed for %s — recovered within debounce window (%s → %s → operational)",
-                    change.service_display_name,
-                    pending.change.previous_status,
-                    pending.change.new_status,
-                )
+        if decision.suppressed_by:
+            logger.info(
+                "Suppressed alert for %s (%s → %s): %s",
+                change.service_display_name,
+                change.previous_status, change.new_status,
+                decision.suppressed_by,
+            )
+            continue
+        individual_sends.append((change, decision.channel_mention or ""))
+
+    # Build aggregated upstream messages (one per upstream with >= threshold dependents)
+    aggregated_payloads: list[tuple[str, dict]] = []
+    for upstream_id, dependents in aggregation.items():
+        upstream_change = next(c for c in changes if c.service_id == upstream_id)
+        decision = await route_status_change(db, upstream_change)
+        async with write_lock:
+            await record_alert(
+                db, upstream_change, decision, alert_kind="aggregated_upstream",
+            )
+            await db.commit()
+
+        if decision.suppressed_by:
+            # Upstream itself is suppressed (tier/maintenance/dedup/webhook).
+            # Don't emit aggregated either — but individual dependents are
+            # still suppressed via aggregated_under to avoid a flood. This
+            # is the right behavior: if the upstream isn't worth alerting
+            # on, neither are its N dependents saying the same thing.
+            logger.info(
+                "Aggregated alert for %s suppressed (%s); %d dependents also silenced",
+                upstream_change.service_display_name,
+                decision.suppressed_by, len(dependents),
+            )
+            continue
+
+        payload = build_aggregated_upstream_alert(
+            upstream_change=upstream_change,
+            dependents=dependents,
+            impact_statement=impact_by_service.get(upstream_id, ""),
+            mention=decision.channel_mention,
+        )
+        aggregated_payloads.append((decision.webhook_url, payload))
+
+    # Send aggregated payloads first (they're the headline news)
+    for webhook_url, payload in aggregated_payloads:
+        try:
+            ok = await send_slack_alert(webhook_url, payload, client=http_client)
+            if ok:
+                logger.info("Sent aggregated upstream alert")
             else:
-                recovery_alerts.append(alert_tuple)
+                logger.warning("Failed to send aggregated upstream alert")
+        except Exception:
+            logger.exception("Aggregated alert send failed")
+        await asyncio.sleep(1.0)
 
-        # Degradation: enter debounce queue
-        elif change.new_status in ("degraded", "partial_outage"):
-            if change.service_id not in _pending_alerts:
-                _pending_alerts[change.service_id] = PendingAlert(
-                    change=change,
-                    first_seen=datetime.now(timezone.utc),
-                    impact=impact,
-                )
-                logger.debug(
-                    "Debounce started for %s (%s)",
-                    change.service_display_name, change.new_status,
-                )
+    # Send individual alerts — either via batch (>3) or one-by-one
+    if not individual_sends:
+        return
 
-    # ── Phase B: Flush matured + cascade group + send ─────────────────
-
-    matured_alerts = flush_matured_alerts()
-
-    # Apply cascade grouping to recoveries
-    individual_recoveries, cascade_groups = await group_cascade_recoveries(
-        db, recovery_alerts,
-    )
-
-    # Combine all alerts to send
-    all_alerts = immediate_alerts + matured_alerts + individual_recoveries
-
-    # Send alerts
-    if not settings.slack_webhook_url:
-        total = len(all_alerts) + len(cascade_groups)
-        if total:
-            logger.debug("Slack webhook not configured, skipping %d alert(s)", total)
+    webhook_url = settings.slack_webhook_url_str
+    if not webhook_url:
         return
 
     try:
-        # Send cascade recovery messages
-        for group in cascade_groups:
-            payload = build_cascade_recovery_alert(
-                group["upstream_name"], group["downstream_names"],
-            )
-            success = await send_slack_alert(
-                settings.slack_webhook_url, payload, client=http_client,
-            )
-            if success:
-                logger.info(
-                    "Sent cascade recovery alert: %s + %d downstream",
-                    group["upstream_name"], len(group["downstream_names"]),
+        if len(individual_sends) > BATCH_THRESHOLD:
+            alert_data = [
+                (
+                    c.service_display_name,
+                    c.previous_status,
+                    c.new_status,
+                    impact_by_service.get(c.service_id, ""),
+                    c.status_page_url,
                 )
+                for c, _mention in individual_sends
+            ]
+            payload = build_batch_slack_alert(alert_data)
+            ok = await send_slack_alert(webhook_url, payload, client=http_client)
+            if ok:
+                logger.info("Sent batch Slack alert for %d changes", len(individual_sends))
             else:
-                logger.warning("Failed to send cascade recovery alert for %s", group["upstream_name"])
-
-        # Send regular alerts
-        if all_alerts:
-            if len(all_alerts) > BATCH_THRESHOLD:
-                payload = build_batch_slack_alert(all_alerts)
-                success = await send_slack_alert(
-                    settings.slack_webhook_url, payload, client=http_client,
+                logger.warning("Failed to send batch Slack alert")
+        else:
+            for i, (change, mention) in enumerate(individual_sends):
+                if i > 0:
+                    await asyncio.sleep(1.0)
+                payload = build_slack_alert(
+                    change.service_display_name,
+                    change.previous_status,
+                    change.new_status,
+                    impact_by_service.get(change.service_id, ""),
+                    change.status_page_url,
+                    mention=mention or None,
                 )
-                if success:
-                    logger.info("Sent batch Slack alert for %d changes", len(all_alerts))
+                ok = await send_slack_alert(webhook_url, payload, client=http_client)
+                if ok:
+                    logger.info("Sent Slack alert for %s", change.service_display_name)
                 else:
-                    logger.warning("Failed to send batch Slack alert")
-            else:
-                for i, (name, old, new, impact, url) in enumerate(all_alerts):
-                    if i > 0:
-                        await asyncio.sleep(1.0)
-                    payload = build_slack_alert(name, old, new, impact, url)
-                    success = await send_slack_alert(
-                        settings.slack_webhook_url, payload, client=http_client,
+                    logger.warning(
+                        "Failed to send Slack alert for %s", change.service_display_name,
                     )
-                    if success:
-                        logger.info("Sent Slack alert for %s", name)
-                    else:
-                        logger.warning("Failed to send Slack alert for %s", name)
     except Exception:
         logger.exception("Slack alerting failed")
+
+
+async def process_poller_health_changes(
+    health_changes: list[PollerHealthChange],
+    http_client: httpx.AsyncClient | None = None,
+) -> None:
+    """Send poller-health alerts to the dedicated webhook (falls back to main).
+
+    These alerts answer: "is our dashboard telling the truth right now?"
+    A poller-health alert fires when a service's poller flips to `broken`
+    (we've been unable to reach the vendor for N consecutive cycles) or
+    recovers from broken back to healthy.
+
+    The payload is tagged as poller-health so the message is never confused
+    with a vendor-outage alert, even when both channels point to the same
+    Slack room in small deployments.
+    """
+    if not health_changes:
+        return
+
+    webhook_url = (
+        settings.poller_health_slack_webhook_url_str
+        or settings.slack_webhook_url_str
+    )
+    if not webhook_url:
+        logger.debug(
+            "No webhook configured, skipping %d poller-health alert(s)",
+            len(health_changes),
+        )
+        return
+
+    using_fallback = (
+        settings.poller_health_slack_webhook_url_str is None
+        and settings.slack_webhook_url_str is not None
+    )
+
+    for i, hc in enumerate(health_changes):
+        if i > 0:
+            await asyncio.sleep(1.0)
+        payload = build_poller_health_alert(hc, using_fallback=using_fallback)
+        try:
+            success = await send_slack_alert(
+                webhook_url, payload, client=http_client,
+            )
+            if success:
+                ALERTS_SENT_TOTAL.labels(
+                    kind="poller_health", severity=hc.new_health,
+                ).inc()
+                logger.info(
+                    "Sent poller-health alert: %s %s → %s",
+                    hc.service_display_name,
+                    hc.previous_health,
+                    hc.new_health,
+                )
+            else:
+                logger.warning(
+                    "Failed to send poller-health alert for %s",
+                    hc.service_display_name,
+                )
+        except Exception:
+            logger.exception(
+                "Poller-health alert failed for %s", hc.service_display_name,
+            )

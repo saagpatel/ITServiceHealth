@@ -1,5 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  IT Service Health Dashboard — launchd daemon (Phase 6 hardened).
+
+  Install:
+    cp com.box.it-health-dashboard.plist \
+       /Library/LaunchDaemons/com.box.it-health-dashboard.plist
+    # Edit the /path/to/ placeholders below first.
+    sudo launchctl bootstrap system /Library/LaunchDaemons/com.box.it-health-dashboard.plist
+
+  Key hardening decisions (see PRODUCTION-ROADMAP.md Phase 6):
+    - KeepAlive is dict-form: restart on crash, NOT on clean exit.
+      Clean exit = operator stopped it deliberately; don't second-guess.
+    - ThrottleInterval=30s so a config-typo crash can't peg CPU in a loop.
+    - PYTHONUNBUFFERED=1 so stdout reaches the log file in real time
+      (critical for tailing during incident response).
+    - Secrets come from macOS Keychain at boot via
+      `security find-generic-password -s it-health -a <account> -w`,
+      NOT from hardcoded strings in EnvironmentVariables. See
+      `scripts/keychain_secrets.sh` for provisioning.
+-->
 <plist version="1.0">
 <dict>
     <key>Label</key>
@@ -7,8 +27,8 @@
 
     <key>ProgramArguments</key>
     <array>
-        <!-- UPDATE: Replace with actual path to project venv on Mac Mini -->
-        <string>/path/to/ITServiceHealth/.venv/bin/python3</string>
+        <!-- UPDATE: actual path to project venv on Mac Mini -->
+        <string>/opt/it-health/.venv/bin/python3</string>
         <string>-m</string>
         <string>uvicorn</string>
         <string>app.main:app</string>
@@ -20,37 +40,80 @@
         <string>2</string>
         <string>--log-level</string>
         <string>warning</string>
+        <!-- Graceful shutdown drains in-flight requests before the
+             scheduler shuts down; see app/poller/scheduler.py. -->
         <string>--timeout-graceful-shutdown</string>
         <string>30</string>
     </array>
 
-    <!-- UPDATE: Replace with actual path to backend/ directory on Mac Mini -->
+    <!-- UPDATE: actual path to backend/ directory on Mac Mini -->
     <key>WorkingDirectory</key>
-    <string>/path/to/ITServiceHealth/backend</string>
+    <string>/opt/it-health/backend</string>
 
     <key>RunAtLoad</key>
     <true/>
 
+    <!-- Dict-form KeepAlive: restart only on Crashed=true. If we set
+         SuccessfulExit=false alone, any exit would trigger a restart,
+         masking deliberate stops. -->
     <key>KeepAlive</key>
     <dict>
         <key>SuccessfulExit</key>
         <false/>
+        <key>Crashed</key>
+        <true/>
     </dict>
 
+    <!-- Wait at least 30s between restart attempts — prevents crash-loop
+         pegging the CPU if the config is bad on startup. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- /var/log/it-health/ is rotated by newsyslog (see
+         /etc/newsyslog.d/it-health.conf). app/logging_config.py uses
+         WatchedFileHandler so we notice the rename and reopen the file
+         instead of writing to a deleted inode. -->
     <key>StandardOutPath</key>
-    <string>/var/log/it-health-dashboard.log</string>
+    <string>/var/log/it-health/stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/it-health-dashboard.log</string>
+    <string>/var/log/it-health/stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin</string>
+        <!-- Forces Python stdout/stderr to be unbuffered — without this,
+             logs trickle in batches and incident tailing lags. -->
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
-        <!-- UPDATE: Add your Slack webhook URL -->
-        <key>SLACK_WEBHOOK_URL</key>
-        <string></string>
+        <!-- UPDATE: path where the SQLite DB lives -->
         <key>DATABASE_PATH</key>
-        <string>./data.db</string>
+        <string>/opt/it-health/data.db</string>
+        <key>LOG_LEVEL</key>
+        <string>INFO</string>
+        <key>LOG_JSON</key>
+        <string>true</string>
+        <!-- Secrets are NOT hardcoded here. The app reads them from
+             Keychain at startup via the wrapper in scripts/run-with-
+             keychain.sh (see README). Uncomment if you want to override
+             a single value for local testing. -->
+        <!--
+        <key>SLACK_WEBHOOK_URL</key>
+        <string>https://hooks.slack.com/services/...</string>
+        <key>ADMIN_API_TOKEN</key>
+        <string>...</string>
+        -->
+    </dict>
+
+    <!-- 4096 is enough headroom for httpx connection pool + aiosqlite
+         + log files + whatever else uvicorn workers might hold open. -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
     </dict>
 </dict>
 </plist>

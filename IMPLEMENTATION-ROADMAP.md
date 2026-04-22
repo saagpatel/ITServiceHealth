@@ -1,5 +1,11 @@
 # IT Service Health Dashboard — Implementation Roadmap
 
+> **ARCHIVED — v1 SHIPPED.**
+>
+> This document describes the original v1 build and is preserved for historical reference. All v1 phases (foundation, polling, normalization, change detection, Slack alerting, React UI, dependency graph, timeline, SLA tracking, incident clustering, auto reports) are **complete and running**.
+>
+> **The active roadmap is [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md).** All new work — resilience, alert hygiene, observability, UX hardening — tracks there. Do not start new work against this document.
+
 ## Architecture
 
 ### System Overview

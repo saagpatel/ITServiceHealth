@@ -1,2 +1,94 @@
+[project]
+name = "it-service-health-dashboard"
+version = "0.1.0"
+description = "Internal dashboard that aggregates SaaS vendor health for Box IT"
+requires-python = ">=3.12"
+# Runtime deps are pinned in requirements.txt for reproducible CI;
+# this file covers tool configs (ruff, mypy, pytest) + packaging metadata.
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
+# `-q` keeps CI output skimmable; individual runs still get full tracebacks
+# from --tb=short when anything fails.
+addopts = "-q --tb=short --strict-markers"
+filterwarnings = [
+    # httpx emits a deprecation warning for the internal client=... kwarg
+    # from respx fixtures. Silence to keep CI logs clean.
+    "ignore::DeprecationWarning:httpx",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [
+    ".venv",
+    "build",
+    "dist",
+    "migrations",  # SQL files — ruff doesn't lint SQL anyway
+]
+
+[tool.ruff.lint]
+# A sensible subset of rules. Every rule here maps to a bug class we
+# actually care about in this codebase; nothing here is "style purity".
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (unused imports, undefined names)
+    "I",    # isort (import ordering)
+    "B",    # bugbear (likely bug patterns)
+    "UP",   # pyupgrade (obsolete syntax)
+    "S",    # bandit (security)
+    "SIM",  # simplify (redundant patterns)
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line too long — line-length is advisory, not a linter job
+    "B008",   # function calls in default args — FastAPI Depends() needs it
+    "S101",   # assert statements — tests use them heavily
+    "S608",   # SQL injection via string formatting — we only use params in prod code
+    "SIM108", # ternary simplification — can hurt readability
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # asserts — the point of pytest
+    "S105",    # hardcoded-password — tests use fake tokens
+    "S106",    # hardcoded-password — tests use fake tokens
+    "S311",    # non-cryptographic random — tests are fine
+    "B017",    # asserting on Exception — common in pytest.raises
+]
+"scripts/**" = [
+    "S603",    # subprocess without shell=True — scripts may invoke tools
+    "S607",    # partial-exec-path — fine in dev scripts
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests", "scripts"]
+combine-as-imports = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = true
+# Third-party types not all present; don't fail CI on that while we're
+# tightening our own code. Revisit once feedparser/purgatory publish stubs.
+ignore_missing_imports = true
+# SQLAlchemy-style Connection.execute returns Any and confuses mypy;
+# we use aiosqlite directly so this isn't an issue, but keep disabled.
+disallow_any_expr = false
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+# Tests don't need the full strict regime — the production code does
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "app.poller.resilience"
+# Purgatory's listener signature accepts an Event base class that mypy
+# can't narrow. The code handles this with isinstance-like guards.
+disable_error_code = ["arg-type"]

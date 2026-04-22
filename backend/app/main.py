@@ -2,15 +2,15 @@
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.config import settings
 from app.database import close_db, get_db, init_db
@@ -23,11 +23,17 @@ VERSION = "0.1.0"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle: DB init, HTTP client, shutdown."""
-    # Configure logging
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    # Structured logging (JSON to stderr or WatchedFileHandler)
+    from app.logging_config import configure_logging
+    configure_logging(
+        level=settings.log_level,
+        json_format=settings.log_json,
+        log_file=settings.log_file,
     )
+
+    # Sentry (optional — no-op when SENTRY_DSN is unset)
+    from app.observability.sentry_setup import configure_sentry
+    configure_sentry()
 
     # Initialize database and run migrations
     await init_db()
@@ -36,13 +42,35 @@ async def lifespan(app: FastAPI):
     from app.seed import load_dependencies, load_services, seed_dependencies, seed_services
     services = load_services()
     await seed_services(services)
-    deps = load_dependencies()
+    deps = load_dependencies(known_service_ids={s.id for s in services})
     await seed_dependencies(deps, [s.id for s in services])
 
-    # Create shared HTTP client for all pollers
+    # Create shared HTTP client for all pollers.
+    # Limits cap simultaneous connections (total and per-host) so one misbehaving
+    # vendor can't starve the pool. Explicit pool timeout prevents deadlock when
+    # the pool saturates.
     app.state.http_client = httpx.AsyncClient(
         follow_redirects=True,
-        timeout=httpx.Timeout(30.0, connect=10.0),
+        timeout=httpx.Timeout(
+            10.0,
+            connect=5.0,
+            read=10.0,
+            write=5.0,
+            pool=2.0,
+        ),
+        limits=httpx.Limits(
+            max_connections=20,
+            max_keepalive_connections=10,
+            max_connections_per_host=1,
+            keepalive_expiry=30.0,
+        ),
+    )
+
+    # Initialize per-host circuit breakers for the resilience layer
+    from app.poller.resilience import configure_breakers
+    configure_breakers(
+        threshold=settings.breaker_threshold,
+        ttl_seconds=settings.breaker_ttl_seconds,
     )
 
     # Seed demo data if configured
@@ -75,23 +103,55 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=settings.cors_origins_list,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Accept"],
+    allow_headers=["Content-Type", "Accept", "Authorization"],
 )
 
 # Register routers
 from app.router_admin import router as admin_router  # noqa: E402
-from app.router_services import router as services_router  # noqa: E402
-from app.router_timeline import router as timeline_router  # noqa: E402
-from app.router_summary import router as summary_router  # noqa: E402
 from app.router_reports import router as reports_router  # noqa: E402
+from app.router_services import router as services_router  # noqa: E402
+from app.router_summary import router as summary_router  # noqa: E402
+from app.router_timeline import router as timeline_router  # noqa: E402
 
 app.include_router(admin_router)
 app.include_router(services_router)
 app.include_router(timeline_router)
 app.include_router(summary_router)
 app.include_router(reports_router)
+
+
+@app.get("/healthz")
+async def healthz() -> Response:
+    """Dead-man's switch health check.
+
+    Returns 200 iff the scheduler has pinged within the stale window.
+    Supervisors (launchd, Caddy, Healthchecks.io) should hit this; a 503
+    here means the scheduler silently stopped and the process should
+    be restarted. Kept intentionally cheap — one in-memory read.
+    """
+    from app.observability.heartbeat import (
+        get_seconds_since_heartbeat,
+        is_heartbeat_fresh,
+    )
+    age = get_seconds_since_heartbeat()
+    fresh = is_heartbeat_fresh()
+    body = {
+        "status": "ok" if fresh else "stale",
+        "heartbeat_age_seconds": round(age, 1),
+        "threshold_seconds": settings.heartbeat_stale_after_seconds,
+    }
+    return JSONResponse(body, status_code=200 if fresh else 503)
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Prometheus scrape endpoint. Text format, cheap, no auth.
+
+    Keep outside the SPA catch-all so it returns plain text, not index.html.
+    """
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/api/health")
@@ -131,8 +191,8 @@ async def health() -> dict:
             try:
                 poll_time = datetime.fromisoformat(row[0])
                 if poll_time.tzinfo is None:
-                    poll_time = poll_time.replace(tzinfo=timezone.utc)
-                now = datetime.now(timezone.utc)
+                    poll_time = poll_time.replace(tzinfo=UTC)
+                now = datetime.now(UTC)
                 poll_age_seconds = int((now - poll_time).total_seconds())
 
                 if poll_age_seconds > 300:

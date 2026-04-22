@@ -16,6 +16,7 @@ import logging
 import httpx
 
 from app.poller.normalizer import ServiceStatus, normalize_slack_status
+from app.poller.resilience import describe_fetch_error, resilient_fetch
 from app.poller.statuspage_poller import PollResult
 
 logger = logging.getLogger(__name__)
@@ -43,18 +44,21 @@ async def poll_slack(
         PollResult with normalized status.
     """
     try:
-        response = await client.get(poll_url, headers={"Accept": "application/json"})
-        response.raise_for_status()
+        # resilient_fetch handles retries + per-host breaker. The explicit
+        # Accept header is from the origin branch so slack-status.com
+        # returns JSON not HTML when redirects land us on a different doc.
+        response = await resilient_fetch(
+            client, poll_url, headers={"Accept": "application/json"},
+        )
         data = response.json()
-    except httpx.HTTPStatusError as e:
-        logger.warning("HTTP %d from Slack status: %s", e.response.status_code, e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=f"HTTP {e.response.status_code}")
-    except httpx.RequestError as e:
-        logger.warning("Request error polling Slack status: %s", e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e))
     except Exception as e:
-        logger.warning("Unexpected error polling Slack status: %s", e)
-        return PollResult(status=ServiceStatus.UNKNOWN, status_detail=str(e))
+        detail, reason = describe_fetch_error(e)
+        logger.warning("Slack poll failed: %s (%s)", detail, reason)
+        return PollResult(
+            status=ServiceStatus.UNKNOWN,
+            status_detail=detail,
+            poll_failure_reason=reason,
+        )
 
     # Normal dict response — use the existing normalizer
     if isinstance(data, dict):

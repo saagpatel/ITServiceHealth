@@ -1,10 +1,15 @@
-"""Admin API router: manual status updates for services without automated polling."""
+"""Admin API router: manual status updates for services without automated polling.
+
+All endpoints require a bearer token (`ADMIN_API_TOKEN` env var). Manual updates
+are audited: `updated_by`, `reason`, and `client_ip` are written to `status_events`.
+"""
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 
+from app.auth import require_admin_token
 from app.database import get_db, get_write_lock
 from app.poller.change_detector import apply_manual_update
 from app.poller.normalizer import ServiceStatus
@@ -15,17 +20,27 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 class StatusUpdateRequest(BaseModel):
-    service_id: str
+    service_id: str = Field(min_length=1, max_length=128)
     new_status: ServiceStatus
-    detail: str | None = None
+    detail: str | None = Field(default=None, max_length=2000)
+    reason: str = Field(
+        min_length=3,
+        max_length=500,
+        description="Why this manual update is being made — stored in the audit trail.",
+    )
 
 
 @router.post("/status")
-async def update_service_status(request: Request, body: StatusUpdateRequest) -> dict:
+async def update_service_status(
+    request: Request,
+    body: StatusUpdateRequest,
+    principal: str = Depends(require_admin_token),
+) -> dict:
     """Manually update a service's status.
 
     Goes through the same change detection path as automated pollers,
     creating a status_event with source='manual' if the status changed.
+    Writes `updated_by`, `reason`, and `client_ip` to the event for audit.
     """
     db = await get_db()
     write_lock = get_write_lock()
@@ -49,12 +64,26 @@ async def update_service_status(request: Request, body: StatusUpdateRequest) -> 
             },
         )
 
+    client_ip = request.client.host if request.client else None
+
     try:
         change = await apply_manual_update(
-            db, write_lock, body.service_id, body.new_status, body.detail,
+            db,
+            write_lock,
+            body.service_id,
+            body.new_status,
+            body.detail,
+            updated_by=principal,
+            reason=body.reason,
+            client_ip=client_ip,
         )
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    logger.info(
+        "Admin update: service=%s new_status=%s by=%s from=%s",
+        body.service_id, body.new_status.value, principal, client_ip,
+    )
 
     # Process alerting (impact statement + Slack)
     if change is not None:

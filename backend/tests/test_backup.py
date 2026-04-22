@@ -2,7 +2,6 @@
 
 import sqlite3
 from datetime import date, timedelta
-from pathlib import Path
 from unittest.mock import patch
 
 import aiosqlite

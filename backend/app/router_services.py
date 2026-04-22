@@ -1,6 +1,6 @@
 """Service API routes: list all services, get service detail with dependencies."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 
@@ -18,14 +18,18 @@ async def list_services(category: str | None = None) -> dict:
     if category:
         cursor = await db.execute(
             """SELECT id, display_name, category, current_status, current_status_detail,
-                      poll_type, status_page_url, last_polled_at, last_status_change_at
+                      poll_type, status_page_url, last_polled_at, last_status_change_at,
+                      consecutive_failures, last_success_at, last_failure_reason, poller_health,
+                      tier
                FROM services WHERE category = ? ORDER BY category, display_name""",
             (category,),
         )
     else:
         cursor = await db.execute(
             """SELECT id, display_name, category, current_status, current_status_detail,
-                      poll_type, status_page_url, last_polled_at, last_status_change_at
+                      poll_type, status_page_url, last_polled_at, last_status_change_at,
+                      consecutive_failures, last_success_at, last_failure_reason, poller_health,
+                      tier
                FROM services ORDER BY category, display_name"""
         )
 
@@ -56,7 +60,7 @@ async def get_services_uptime() -> dict:
     db = await get_db()
 
     # Generate the last 7 days
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     days = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
 
     cursor = await db.execute(
@@ -162,7 +166,7 @@ async def get_sla_history(days: int = 30) -> dict:
     rows = await cursor.fetchall()
 
     # Generate day list
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     day_list = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days - 1, -1, -1)]
 
     # Compute daily uptime in Python (handles cross-day boundary splitting)
@@ -185,7 +189,7 @@ async def get_sla_history(days: int = 30) -> dict:
             end_dt = (
                 datetime.fromisoformat(ended_str.replace("Z", "+00:00"))
                 if ended_str
-                else now.replace(tzinfo=timezone.utc) if now.tzinfo else now
+                else now.replace(tzinfo=UTC) if now.tzinfo else now
             )
         except (ValueError, TypeError):
             continue
