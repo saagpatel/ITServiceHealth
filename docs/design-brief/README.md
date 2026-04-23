@@ -1,33 +1,31 @@
 # Pulse — Claude Design Brief
 
-This directory is the handoff package for [Claude Design](https://www.anthropic.com/news/claude-design-anthropic-labs). Point Claude Design at this folder (or at the repo root) to produce a redesigned visual system that we then bring back through the Claude Design → Claude Code handoff bundle.
+Handoff package for [Claude Design](https://www.anthropic.com/news/claude-design-anthropic-labs) to redesign Pulse.
+
+## TL;DR
+
+**[how-to-capture.md](./how-to-capture.md) — 3 steps, ~5 minutes of your time.**
+
+1. Upload this folder to Claude Design + link the repo
+2. Paste the first-message prompt and iterate
+3. Hand off to Claude Code with the one-line instruction
+
+That's it.
 
 ## What's in here
 
-| File | For Claude Design | For you |
-|------|-------------------|---------|
-| [`brief.md`](./brief.md) | The product intent, audiences, and non-negotiables. Read this first. | |
-| [`design-system-export.md`](./design-system-export.md) | Current tokens + components in machine-readable form. | |
-| [`component-inventory.md`](./component-inventory.md) | Every React component + its role in the UI. | |
-| [`how-to-capture.md`](./how-to-capture.md) | | Step-by-step: start the app, grab screenshots, feed Claude Design, bring the handoff back. |
-| [`screenshots/`](./screenshots/) | | You drop screenshots here before starting Claude Design. |
+| File | Purpose |
+|------|---------|
+| [`how-to-capture.md`](./how-to-capture.md) | **Start here.** The 3-step workflow. |
+| [`brief.md`](./brief.md) | Audiences, intent, direction, non-negotiables. Claude Design reads this first. |
+| [`design-system-export.md`](./design-system-export.md) | Current tokens (colors, typography, spacing) + semantic rules that must survive any redesign. |
+| [`component-inventory.md`](./component-inventory.md) | Every React component + the API shape it consumes. |
+| [`screenshots/`](./screenshots/) | Optional — only if you want to show a specific live state. |
 
-## The two-surface workflow
+## Workflow
 
 ```
-┌──────────────────────────┐       ┌────────────────────────┐
-│  Claude Design (web)     │       │  Claude Code (here)    │
-│  — reads this folder     │       │  — applies the bundle  │
-│  — reads repo codebase   │       │    to frontend/src/    │
-│  — produces visual       │       │  — PR + verify + merge │
-│    proposal + handoff    │──────▶│                        │
-│    bundle                │       │                        │
-└──────────────────────────┘       └────────────────────────┘
+You → claude.ai/design → produces handoff bundle → paste to Claude Code → I apply + PR
 ```
 
-1. **In Claude Design:** upload or link this folder + the repo. Iterate on the visual direction. Export the **handoff to Claude Code** bundle.
-2. **Back in Claude Code:** paste the bundle into a new chat with me; I'll apply it to `frontend/src/`, run `npm run build`, open a preview PR.
-
-## Why this brief exists
-
-Pulse is already WCAG-accessible, dense, and tuned for two different audiences (IT engineers vs. IT leadership). A redesign that looks pretty but breaks that tuning is a regression, not a refresh. This brief makes the non-negotiables explicit so Claude Design's output lands as a drop-in upgrade instead of a do-over.
+Claude Design reads this folder + the repo directly. You don't need screenshots for it to understand the UI.
