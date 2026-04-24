@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.database import get_db
 from app.dependencies.graph import get_downstream, get_upstream
+from app.sla import compute_uptime
 
 router = APIRouter(prefix="/api", tags=["services"])
 
@@ -100,44 +101,25 @@ async def get_services_uptime() -> dict:
 async def get_services_sla() -> dict:
     """Get per-service uptime percentages for 24h, 7d, and 30d windows."""
     db = await get_db()
+    now = datetime.now(UTC)
+
+    # Collect service IDs that have events (same set as before).
+    cursor = await db.execute(
+        """SELECT DISTINCT service_id FROM status_events
+           WHERE NOT (previous_status = 'unknown' AND new_status = 'operational')"""
+    )
+    service_ids = [row[0] for row in await cursor.fetchall()]
 
     results: dict[str, dict[str, float | None]] = {}
 
     for window_label, window_days in [("uptime_24h", 1), ("uptime_7d", 7), ("uptime_30d", 30)]:
-        cursor = await db.execute(
-            """WITH intervals AS (
-                SELECT service_id, new_status as status,
-                       created_at as started,
-                       LEAD(created_at) OVER (PARTITION BY service_id ORDER BY created_at) as ended
-                FROM status_events
-                WHERE created_at >= datetime('now', ? || ' days')
-                  AND NOT (previous_status = 'unknown' AND new_status = 'operational')
-               )
-               SELECT service_id,
-                      SUM(CASE WHEN status = 'operational'
-                          THEN (julianday(COALESCE(ended, datetime('now'))) - julianday(started)) * 86400
-                          ELSE 0 END) as operational_seconds,
-                      SUM(CASE WHEN status != 'unknown'
-                          THEN (julianday(COALESCE(ended, datetime('now'))) - julianday(started)) * 86400
-                          ELSE 0 END) as tracked_seconds
-               FROM intervals
-               WHERE status != 'unknown'
-               GROUP BY service_id""",
-            (f"-{window_days}",),
-        )
-        rows = await cursor.fetchall()
-
-        for row in rows:
-            sid = row[0]
-            operational = row[1] or 0
-            tracked = row[2] or 0
-
+        window_start = now - timedelta(days=window_days)
+        for sid in service_ids:
+            uptime = await compute_uptime(db, sid, window_start, now)
             if sid not in results:
                 results[sid] = {"uptime_24h": None, "uptime_7d": None, "uptime_30d": None}
-
-            if tracked > 0:
-                pct = round((operational / tracked) * 100, 2)
-                results[sid][window_label] = min(pct, 100.0)
+            if uptime.uptime_percent is not None:
+                results[sid][window_label] = uptime.uptime_percent
 
     return {
         "data": {"services": results},
@@ -152,75 +134,34 @@ async def get_sla_history(days: int = 30) -> dict:
     db = await get_db()
     days = max(1, min(days, 90))
 
-    # Fetch all status intervals in the window
-    cursor = await db.execute(
-        """SELECT service_id, new_status as status,
-                  created_at as started,
-                  LEAD(created_at) OVER (PARTITION BY service_id ORDER BY created_at) as ended
-           FROM status_events
-           WHERE created_at >= datetime('now', ? || ' days')
-             AND NOT (previous_status = 'unknown' AND new_status = 'operational')
-           ORDER BY service_id, created_at""",
-        (f"-{days}",),
-    )
-    rows = await cursor.fetchall()
-
-    # Generate day list
     now = datetime.now(UTC)
     day_list = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days - 1, -1, -1)]
 
-    # Compute daily uptime in Python (handles cross-day boundary splitting)
-    # Accumulate per (service_id, day) → (operational_seconds, tracked_seconds)
-    from collections import defaultdict
+    # Collect service IDs that have events in the window (preserves the same
+    # set of services that appeared in the old response).
+    window_start_overall = now - timedelta(days=days)
+    cursor = await db.execute(
+        """SELECT DISTINCT service_id FROM status_events
+           WHERE created_at >= ?
+             AND NOT (previous_status = 'unknown' AND new_status = 'operational')""",
+        (window_start_overall.isoformat(),),
+    )
+    service_ids = [row[0] for row in await cursor.fetchall()]
 
-    daily: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(lambda: [0.0, 0.0]))
-
-    for row in rows:
-        sid = row[0]
-        status = row[1]
-        started_str = row[2]
-        ended_str = row[3]
-
-        if status == "unknown":
-            continue
-
-        try:
-            start_dt = datetime.fromisoformat(started_str.replace("Z", "+00:00"))
-            end_dt = (
-                datetime.fromisoformat(ended_str.replace("Z", "+00:00"))
-                if ended_str
-                else now.replace(tzinfo=UTC) if now.tzinfo else now
-            )
-        except (ValueError, TypeError):
-            continue
-
-        # Split interval across calendar days
-        current = start_dt
-        while current < end_dt:
-            day_key = current.strftime("%Y-%m-%d")
-            next_day = (current.replace(hour=0, minute=0, second=0, microsecond=0)
-                        + timedelta(days=1))
-            segment_end = min(end_dt, next_day)
-            seconds = (segment_end - current).total_seconds()
-
-            if seconds > 0:
-                daily[sid][day_key][1] += seconds  # tracked
-                if status == "operational":
-                    daily[sid][day_key][0] += seconds  # operational
-
-            current = next_day
-
-    # Build response
     services_data: dict[str, list[dict]] = {}
-    for sid, day_map in daily.items():
+
+    for sid in service_ids:
         points = []
-        for day in day_list:
-            operational, tracked = day_map.get(day, [0.0, 0.0])
-            if tracked > 0:
-                pct = round(min((operational / tracked) * 100, 100.0), 2)
-            else:
-                pct = None
-            points.append({"date": day, "uptime": pct})
+        for i in range(days - 1, -1, -1):
+            # Calendar day matching day_list entry: (now - timedelta(days=i)).date()
+            day_dt = now - timedelta(days=i)
+            day_key = day_dt.strftime("%Y-%m-%d")
+            day_start = day_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end = day_start + timedelta(days=1)
+
+            uptime = await compute_uptime(db, sid, day_start, day_end)
+            points.append({"date": day_key, "uptime": uptime.uptime_percent})
+
         services_data[sid] = points
 
     return {

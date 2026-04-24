@@ -8,7 +8,10 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.alerting.burn_rate import BurnRateBreach
 
 import httpx
 
@@ -364,6 +367,95 @@ def build_poller_health_alert(
         f"{health_change.service_display_name}"
     )
     return {"text": fallback, "blocks": blocks}
+
+
+def build_slo_burn_rate_alert(
+    breach: "BurnRateBreach",
+    *,
+    channel_mention: str = "",
+    dedup_key: str | None = None,
+    status_page_url: str | None = None,
+) -> dict[str, Any]:
+    """Build a Slack Block Kit payload for a burn-rate breach.
+
+    Modelled after build_slack_alert. Severity-labelled header, two-column
+    fields section, a descriptive burn-rate sentence, and optional action
+    buttons (View Status Page, Acknowledge).
+    """
+    from app.config import settings as _settings
+
+    slo_target = _settings.slo_target_percent
+    severity_label = breach.severity.capitalize()  # "Fast" or "Slow"
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+    blocks: list[dict[str, Any]] = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"\U0001f525 SLO burn-rate alert: {breach.service_name}",
+                "emoji": True,
+            },
+        },
+    ]
+
+    if channel_mention:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": channel_mention}],
+        })
+
+    blocks.append({
+        "type": "section",
+        "fields": [
+            {"type": "mrkdwn", "text": f"*Severity:*\n{severity_label} burn"},
+            {"type": "mrkdwn", "text": f"*Error budget remaining:*\n{breach.error_budget_remaining_pct:.1f}%"},
+            {"type": "mrkdwn", "text": f"*SLO target:*\n{slo_target}%"},
+            {"type": "mrkdwn", "text": f"*Window:*\n{breach.long_window_label} / {breach.short_window_label}"},
+        ],
+    })
+
+    blocks.append({
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": (
+                f"Consuming error budget at *{breach.long_window_burn_rate:.1f}\u00d7* the allowable rate "
+                f"over {breach.long_window_label}, and *{breach.short_window_burn_rate:.1f}\u00d7* over "
+                f"{breach.short_window_label}."
+            ),
+        },
+    })
+
+    action_elements: list[dict[str, Any]] = []
+
+    if status_page_url:
+        action_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "View Status Page"},
+            "url": status_page_url,
+            "action_id": "view_status_page",
+        })
+
+    if dedup_key and _ack_enabled():
+        action_elements.append(_build_ack_button(dedup_key))
+
+    if action_elements:
+        blocks.append({"type": "actions", "elements": action_elements})
+
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": f"IT Service Health Dashboard \u2022 SLO Burn Rate \u2022 {now}"}],
+    })
+
+    return {
+        "text": (
+            f"\U0001f525 SLO {severity_label} burn-rate alert: {breach.service_name} "
+            f"— {breach.long_window_burn_rate:.1f}\u00d7 over {breach.long_window_label}"
+        ),
+        "blocks": blocks,
+    }
 
 
 async def send_slack_alert(

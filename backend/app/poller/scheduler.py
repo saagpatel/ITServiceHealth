@@ -130,6 +130,25 @@ def start_scheduler(app) -> None:
         coalesce=True,
     )
 
+    # SLO burn-rate alerting — gated by feature flag (default off)
+    if settings.slo_burn_rate_enabled:
+        from app.alerting.burn_rate import run_slo_burn_rate_cycle
+        scheduler.add_job(
+            run_slo_burn_rate_cycle,
+            "interval",
+            seconds=settings.slo_burn_rate_check_interval_seconds,
+            args=[app],
+            id="slo_burn_rate_cycle",
+            replace_existing=True,
+            next_run_time=datetime.now(UTC),
+            max_instances=1,
+            coalesce=True,
+        )
+        logger.info(
+            "Registered SLO burn-rate cycle job (interval=%ss)",
+            settings.slo_burn_rate_check_interval_seconds,
+        )
+
     scheduler.start()
     logger.info(
         "Poll scheduler started (poll=%ds, heartbeat=%ds, checkpoint=%dh, "
