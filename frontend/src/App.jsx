@@ -12,7 +12,9 @@ import StatusBanner from "./components/StatusBanner";
 import IncidentSection from "./components/IncidentSection";
 import MaintenanceBanner from "./components/MaintenanceBanner";
 import ServiceGrid from "./components/ServiceGrid";
-import CategorySummary from "./components/CategorySummary";
+// retired in Phase 2 of docs/executive-view-redesign/IMPLEMENTATION-ROADMAP.md
+// import CategorySummary from "./components/CategorySummary";
+import ExecutiveView from "./views/ExecutiveView";
 import Timeline from "./components/Timeline";
 import ServiceDetail from "./components/ServiceDetail";
 import DependencyGraph from "./components/DependencyGraph";
@@ -153,7 +155,7 @@ function AppContent() {
         {/* Active Incidents */}
         <IncidentSection incidents={summary.data?.active_incidents} />
 
-        {/* Service Grid (Engineer) or Category Summary (Executive) */}
+        {/* Service Grid (Engineer) or Executive view */}
         {view === "engineer" ? (
           <ServiceGrid
             services={services.data}
@@ -161,7 +163,7 @@ function AppContent() {
             onSelect={setSelectedServiceId}
           />
         ) : (
-          <CategorySummary services={services.data} slaData={sla.data} />
+          <ExecutiveView />
         )}
 
         {/* Maintenance */}

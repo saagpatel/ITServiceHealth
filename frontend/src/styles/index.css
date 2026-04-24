@@ -31,6 +31,23 @@
   --color-banner-warn: #78350f;
   --color-banner-crit: #7f1d1d;
 
+  /* Executive-view tokens. Single alarm-red accent reserved for degraded
+     and major states; surface-elev-* and text-display used only by the
+     conference-room view. */
+  --color-accent-alarm: #ef4444;
+  --color-surface-elev-1: #0f172a;
+  --color-surface-elev-2: #1b2436;
+  --color-text-display: #f8fafc;
+  --color-text-dim: #64748b;
+
+  /* 2x typography scale for the Executive view — body / lede / h2 /
+     display. Used in clamp()-wrapped utilities inside ExecutiveView
+     components so the scale adapts to viewport width. */
+  --text-exec-body: 0.875rem;
+  --text-exec-lede: 1.75rem;
+  --text-exec-h2: 3.5rem;
+  --text-exec-display: 7rem;
+
   --font-sans: "IBM Plex Sans", ui-sans-serif, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
