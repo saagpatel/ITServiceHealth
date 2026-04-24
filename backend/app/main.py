@@ -23,13 +23,18 @@ VERSION = "0.1.0"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle: DB init, HTTP client, shutdown."""
-    # Structured logging (JSON to stderr or WatchedFileHandler)
+    # Structured logging (JSON to stderr or WatchedFileHandler).
+    # When log_file is set, configure_logging returns a QueueListener that
+    # offloads file I/O to a dedicated thread so disk writes never block the
+    # asyncio event loop.
     from app.logging_config import configure_logging
-    configure_logging(
+    log_listener = configure_logging(
         level=settings.log_level,
         json_format=settings.log_json,
         log_file=settings.log_file,
     )
+    if log_listener is not None:
+        log_listener.start()
 
     # Sentry (optional — no-op when SENTRY_DSN is unset)
     from app.observability.sentry_setup import configure_sentry
@@ -92,6 +97,8 @@ async def lifespan(app: FastAPI):
     await app.state.http_client.aclose()
     await close_db()
     logger.info("Shutdown complete")
+    if log_listener is not None:
+        log_listener.stop()
 
 
 app = FastAPI(

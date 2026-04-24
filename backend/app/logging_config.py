@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import queue as queue_mod
 import sys
 from pathlib import Path
 
@@ -26,7 +27,7 @@ def configure_logging(
     level: str = "INFO",
     json_format: bool = True,
     log_file: str | Path | None = None,
-) -> None:
+) -> logging.handlers.QueueListener | None:
     """Set up structlog + stdlib logging as a unified JSON pipeline.
 
     Call once at app startup (lifespan). Safe to re-invoke — idempotent.
@@ -78,27 +79,38 @@ def configure_logging(
         ],
     )
 
-    if log_file is not None:
-        # WatchedFileHandler reopens the file if the inode changes under it,
-        # which is exactly what newsyslog rotation does (rename + create).
-        # FileHandler would keep writing to the deleted inode forever.
-        handler: logging.Handler = logging.handlers.WatchedFileHandler(
-            str(log_file), encoding="utf-8",
-        )
-    else:
-        handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(formatter)
-
     root = logging.getLogger()
     # Replace any existing handlers to avoid duplicate output when the
     # lifespan is re-entered (e.g., during tests using the FastAPI TestClient).
     root.handlers.clear()
-    root.addHandler(handler)
     root.setLevel(numeric_level)
+
+    if log_file is not None:
+        # File handler runs on a dedicated thread via QueueListener so disk
+        # I/O (including WatchedFileHandler's inode-check-and-reopen on
+        # rotation) never blocks the asyncio event loop.
+        file_handler = logging.handlers.WatchedFileHandler(
+            str(log_file), encoding="utf-8",
+        )
+        file_handler.setFormatter(formatter)
+        log_queue: queue_mod.Queue[logging.LogRecord] = queue_mod.Queue(-1)
+        queue_handler = logging.handlers.QueueHandler(log_queue)
+        listener = logging.handlers.QueueListener(
+            log_queue, file_handler, respect_handler_level=True,
+        )
+        root.addHandler(queue_handler)
+        result_listener: logging.handlers.QueueListener | None = listener
+    else:
+        stream_handler = logging.StreamHandler(sys.stderr)
+        stream_handler.setFormatter(formatter)
+        root.addHandler(stream_handler)
+        result_listener = None
 
     # Quiet down chatty third-party loggers one notch
     for noisy in ("httpx", "httpcore", "apscheduler"):
         logging.getLogger(noisy).setLevel(max(numeric_level, logging.WARNING))
+
+    return result_listener
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
