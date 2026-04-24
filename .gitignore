@@ -34,3 +34,8 @@ frontend/dist/
 
 # OS
 .DS_Store
+
+# Screenshot capture scratch files — the committed Phase 3 screenshots
+# are exec-operational.png and exec-major.png; anything with a leading
+# underscore is a local probe.
+docs/executive-view-redesign/screenshots/_*.png

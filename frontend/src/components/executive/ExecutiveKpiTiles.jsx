@@ -47,7 +47,10 @@ export default function ExecutiveKpiTiles({ exec }) {
   return (
     <section
       aria-label="Key performance indicators"
-      className="grid grid-cols-1 md:grid-cols-3 gap-4"
+      // Stack one-per-row below 1024 px so 4:3 NOC screens and portrait
+      // wall mounts never break the tile layout. Three equal columns
+      // above the lg breakpoint, which is the 16:9 boardroom case.
+      className="grid grid-cols-1 lg:grid-cols-3 gap-4"
     >
       {tiles.map((tile) => (
         <div
