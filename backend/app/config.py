@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # Feature-gated off by default; set SLACK_ACK_ENABLED=true + the signing
     # secret from your Slack app's "Basic Information → App Credentials" page.
     slack_ack_enabled: bool = False
+    # Feature-gated off by default; set SLACK_SLASH_ENABLED=true once the
+    # Slack app has a slash command pointing at POST /api/slack/slash and
+    # SLACK_SIGNING_SECRET is configured.
+    slack_slash_enabled: bool = False
     slack_signing_secret: SecretStr | None = None
 
     # Admin write endpoints require this token in the Authorization header.
