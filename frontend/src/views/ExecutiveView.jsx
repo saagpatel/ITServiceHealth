@@ -1,6 +1,7 @@
 import { useExecutiveData } from "../hooks/use-executive-data";
 import ExecutiveStatusPanel from "../components/executive/ExecutiveStatusPanel";
 import ExecutiveKpiTiles from "../components/executive/ExecutiveKpiTiles";
+import ExecutiveTrendStrip from "../components/executive/ExecutiveTrendStrip";
 import ExecutiveImpactList from "../components/executive/ExecutiveImpactList";
 
 export default function ExecutiveView() {
@@ -25,6 +26,9 @@ export default function ExecutiveView() {
           slaObserved={execData.slaObserved}
           slaDeltaBps={execData.slaDeltaBps}
         />
+      </div>
+      <div className="col-span-12">
+        <ExecutiveTrendStrip trend={execData.trend} />
       </div>
       <div className="col-span-12">
         <ExecutiveImpactList impact={execData.impact} />
