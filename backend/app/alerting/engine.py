@@ -116,7 +116,20 @@ async def process_changes(
 
                 from app.reports import generate_incident_report
                 resolved_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-                await generate_incident_report(db, write_lock, change.service_id, resolved_at)
+                report = await generate_incident_report(db, write_lock, change.service_id, resolved_at)
+                if settings.postmortems_enabled and report:
+                    try:
+                        from pathlib import Path
+
+                        from app.postmortems import write_postmortem
+                        out_dir = Path(settings.postmortems_dir).resolve()
+                        written = await write_postmortem(report, out_dir=out_dir)
+                        if written:
+                            logger.info("Wrote postmortem draft: %s", written)
+                    except Exception:
+                        logger.exception(
+                            "Failed to write postmortem for %s", change.service_id,
+                        )
             except Exception:
                 logger.exception("Failed to generate incident report for %s", change.service_id)
 
