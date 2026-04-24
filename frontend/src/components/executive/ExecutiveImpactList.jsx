@@ -61,6 +61,8 @@ export default function ExecutiveImpactList({ impact }) {
         return (
           <li
             key={row.id}
+            tabIndex={0}
+            aria-label={`${row.label}, ${chipLabel}. ${row.impactLine}`}
             className="px-8 py-6 flex items-start justify-between gap-6"
           >
             <div className="flex-1 min-w-0">
