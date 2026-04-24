@@ -149,7 +149,9 @@ async def process_changes(
             continue
 
         decision = await route_status_change(
-            db, change, aggregated_under=aggregated_under.get(change.service_id),
+            db, change,
+            aggregated_under=aggregated_under.get(change.service_id),
+            vendor_incident_id=change.vendor_incident_id,
         )
         async with write_lock:
             await record_alert(db, change, decision)
@@ -169,7 +171,10 @@ async def process_changes(
     aggregated_payloads: list[tuple[str, dict]] = []
     for upstream_id, dependents in aggregation.items():
         upstream_change = next(c for c in changes if c.service_id == upstream_id)
-        decision = await route_status_change(db, upstream_change)
+        decision = await route_status_change(
+            db, upstream_change,
+            vendor_incident_id=upstream_change.vendor_incident_id,
+        )
         async with write_lock:
             await record_alert(
                 db, upstream_change, decision, alert_kind="aggregated_upstream",

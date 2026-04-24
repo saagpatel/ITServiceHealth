@@ -8,6 +8,7 @@ from app.config import settings
 from app.poller.change_detector import (
     PollerHealthChange,
     _compute_new_health,
+    _extract_vendor_incident_id,
     _is_going_worse,
     _update_pending,
     apply_manual_update,
@@ -475,6 +476,80 @@ class TestApplyManualUpdate:
         lock = asyncio.Lock()
         with pytest.raises(ValueError, match="not found"):
             await apply_manual_update(db, lock, "nonexistent", ServiceStatus.DEGRADED, None)
+
+
+class TestExtractVendorIncidentId:
+    """Unit tests for _extract_vendor_incident_id — no DB, no I/O."""
+
+    def test_returns_id_from_first_incident(self):
+        result = PollResult(
+            status=ServiceStatus.DEGRADED,
+            incidents=[{"id": "abc123", "status": "investigating", "name": "API latency"}],
+        )
+        assert _extract_vendor_incident_id(result) == "abc123"
+
+    def test_returns_none_when_no_incidents(self):
+        result = PollResult(status=ServiceStatus.DEGRADED, incidents=[])
+        assert _extract_vendor_incident_id(result) is None
+
+    def test_returns_none_when_id_missing_from_dict(self):
+        result = PollResult(
+            status=ServiceStatus.DEGRADED,
+            incidents=[{"status": "investigating"}],
+        )
+        assert _extract_vendor_incident_id(result) is None
+
+    def test_coerces_id_to_str(self):
+        result = PollResult(
+            status=ServiceStatus.DEGRADED,
+            incidents=[{"id": 99, "status": "investigating"}],
+        )
+        assert _extract_vendor_incident_id(result) == "99"
+
+
+@pytest.mark.usefixtures("_no_flap_suppression")
+class TestVendorIncidentIdWiring:
+    """Integration: vendor_incident_id flows from PollResult → status_events → StatusChange."""
+
+    async def test_vendor_incident_id_populated_from_statuspage_incidents(self, db):
+        await _insert_service(db, "svc-inc", "operational")
+        lock = asyncio.Lock()
+
+        result = PollResult(
+            status=ServiceStatus.DEGRADED,
+            status_detail="API latency elevated",
+            incidents=[{"id": "abc123", "status": "investigating", "name": "API latency"}],
+        )
+        changes, _ = await detect_changes(db, lock, [("svc-inc", result)])
+
+        assert len(changes) == 1
+        assert changes[0].vendor_incident_id == "abc123"
+
+        cursor = await db.execute(
+            "SELECT vendor_incident_id FROM status_events WHERE service_id='svc-inc'"
+        )
+        row = dict(await cursor.fetchone())
+        assert row["vendor_incident_id"] == "abc123"
+
+    async def test_vendor_incident_id_null_when_no_incidents(self, db):
+        await _insert_service(db, "svc-noinc", "operational")
+        lock = asyncio.Lock()
+
+        result = PollResult(
+            status=ServiceStatus.DEGRADED,
+            status_detail="All systems operational",
+            incidents=[],
+        )
+        changes, _ = await detect_changes(db, lock, [("svc-noinc", result)])
+
+        assert len(changes) == 1
+        assert changes[0].vendor_incident_id is None
+
+        cursor = await db.execute(
+            "SELECT vendor_incident_id FROM status_events WHERE service_id='svc-noinc'"
+        )
+        row = dict(await cursor.fetchone())
+        assert row["vendor_incident_id"] is None
 
 
 class TestUpsertMaintenances:

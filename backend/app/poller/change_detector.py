@@ -42,6 +42,7 @@ class StatusChange:
     poll_type: str
     status_page_url: str | None
     event_id: int | None = None
+    vendor_incident_id: str | None = None
 
 
 @dataclass
@@ -357,14 +358,16 @@ async def detect_changes(
                 )
 
                 vendor_title = _extract_vendor_title(poll_result)
+                vendor_incident_id = _extract_vendor_incident_id(poll_result)
                 cursor_ins = await db.execute(
                     """INSERT INTO status_events
                        (service_id, previous_status, new_status, vendor_title,
-                        vendor_detail, source, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        vendor_detail, source, created_at, vendor_incident_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         service_id, old_status, new_status, vendor_title,
                         poll_result.status_detail, svc["poll_type"], now,
+                        vendor_incident_id,
                     ),
                 )
                 event_id = cursor_ins.lastrowid
@@ -378,6 +381,7 @@ async def detect_changes(
                     poll_type=svc["poll_type"],
                     status_page_url=svc["status_page_url"],
                     event_id=event_id,
+                    vendor_incident_id=vendor_incident_id,
                 ))
 
                 logger.info(
@@ -550,4 +554,20 @@ def _extract_vendor_title(poll_result: PollResult) -> str | None:
     if poll_result.incidents:
         first = poll_result.incidents[0]
         return first.get("name") or first.get("title")
+    return None
+
+
+def _extract_vendor_incident_id(poll_result: PollResult) -> str | None:
+    """Extract the first active incident ID from a Statuspage poll result.
+
+    Returns None when no incidents are present so the dedup layer falls back
+    to the (service_id, status, day_bucket) key.
+    """
+    incidents = getattr(poll_result, "incidents", None) or []
+    if not incidents:
+        return None
+    first = incidents[0]
+    if isinstance(first, dict):
+        inc_id = first.get("id")
+        return str(inc_id) if inc_id else None
     return None

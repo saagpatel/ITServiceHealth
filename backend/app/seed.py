@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import os
+import re
 import sys
 from pathlib import Path
 from typing import Literal
@@ -13,6 +15,31 @@ from app.config import settings
 from app.database import close_db, get_write_lock, init_db
 
 logger = logging.getLogger(__name__)
+
+_ENV_VAR_PATTERN = re.compile(r"^\$\{([A-Z_][A-Z0-9_]*)\}$")
+
+
+def _expand_env_var(value: str | None) -> str | None:
+    """Expand a ${VAR_NAME} reference to its environment value, or return
+    the value unchanged if it's not a reference. If the reference can't be
+    resolved, log a warning and return None so routing falls back to the
+    global webhook."""
+    if value is None:
+        return None
+    match = _ENV_VAR_PATTERN.match(value.strip())
+    if not match:
+        return value  # not a reference, return as-is
+    var_name = match.group(1)
+    resolved = os.environ.get(var_name)
+    if resolved is None:
+        logger.warning(
+            "slack_channel_override references ${%s} but env var is unset; "
+            "falling back to global webhook",
+            var_name,
+        )
+        return None
+    return resolved
+
 
 VALID_CATEGORIES = Literal[
     "identity", "productivity", "collaboration", "engineering",
@@ -166,7 +193,7 @@ async def seed_services(services: list[ServiceConfig]) -> int:
                     svc.statuspage_component_name,
                     svc.status_page_url,
                     svc.tier,
-                    svc.slack_channel_override,
+                    _expand_env_var(svc.slack_channel_override),
                 ),
             )
         await conn.commit()

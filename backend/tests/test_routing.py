@@ -232,6 +232,26 @@ class TestRouteStatusChange:
         assert not decision.should_send
         assert decision.suppressed_by == "webhook_not_configured"
 
+    async def test_webhook_override_used_when_set(self, db):
+        override = "https://hooks.slack.com/services/T/B/override"
+        await _insert_service(db, "overridden", tier="important", override=override)
+        decision = await route_status_change(db, _make_change("overridden"))
+        assert decision.should_send
+        assert decision.webhook_url == override
+
+    async def test_webhook_override_null_falls_back_to_global(self, db):
+        await _insert_service(db, "noverride", tier="important", override=None)
+        decision = await route_status_change(db, _make_change("noverride"))
+        assert decision.should_send
+        assert decision.webhook_url == settings.slack_webhook_url_str
+
+    async def test_vendor_incident_id_drives_dedup_key(self, db):
+        await _insert_service(db, "dedup-svc", tier="important")
+        decision = await route_status_change(
+            db, _make_change("dedup-svc"), vendor_incident_id="abc123",
+        )
+        assert decision.dedup_key == "vendor:dedup-svc:abc123"
+
 
 class TestRecordAlert:
     async def test_records_fired_alert(self, db):
