@@ -10,6 +10,27 @@ from datetime import datetime
 import aiosqlite
 
 
+def compute_error_budget_remaining(
+    uptime_30d_pct: float | None,
+    slo_target_pct: float,
+) -> float:
+    """Return error budget remaining (0.0-100.0) from 30-day uptime vs SLO target.
+
+    - None uptime (unknown-dominated window) → assume full budget (100.0).
+    - Uptime at or above target → 100.0.
+    - Uptime below target → pct of monthly budget not yet consumed.
+    - slo_target_pct >= 100 (no budget) → 100.0 (undefined case, return safe default).
+    """
+    if uptime_30d_pct is None:
+        return 100.0
+    budget_total = 100.0 - slo_target_pct
+    if budget_total <= 0:
+        return 100.0
+    budget_used = max(0.0, 100.0 - uptime_30d_pct)
+    pct_used = (budget_used / budget_total) * 100.0
+    return max(0.0, min(100.0, 100.0 - pct_used))
+
+
 @dataclass(frozen=True)
 class WindowUptime:
     operational_seconds: float

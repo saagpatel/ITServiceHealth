@@ -24,7 +24,7 @@ import aiosqlite
 import structlog
 
 from app.config import settings
-from app.sla import compute_uptime
+from app.sla import compute_error_budget_remaining, compute_uptime
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -98,13 +98,9 @@ async def evaluate_burn_rate(
         return []
 
     # Error budget remaining over the 30-day rolling window
-    if w30d.uptime_percent is None:
-        error_budget_remaining_pct = 100.0
-    else:
-        budget_total = 100.0 - slo_target          # e.g. 0.1 for 99.9%
-        budget_used  = 100.0 - w30d.uptime_percent  # e.g. 0.05 if 99.95% uptime
-        pct_used = (budget_used / budget_total) * 100.0 if budget_total > 0 else 0.0
-        error_budget_remaining_pct = max(0.0, min(100.0, 100.0 - pct_used))
+    error_budget_remaining_pct = compute_error_budget_remaining(
+        w30d.uptime_percent, slo_target,
+    )
 
     br_5m  = _burn_rate(w5m.uptime_percent,  allowable_failure_rate)
     br_30m = _burn_rate(w30m.uptime_percent, allowable_failure_rate)

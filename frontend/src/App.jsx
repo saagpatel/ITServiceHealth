@@ -13,6 +13,7 @@ import IncidentSection from "./components/IncidentSection";
 import MaintenanceBanner from "./components/MaintenanceBanner";
 import ServiceGrid from "./components/ServiceGrid";
 import ExecutiveView from "./views/ExecutiveView";
+import SloView from "./views/SloView";
 import Timeline from "./components/Timeline";
 import ServiceDetail from "./components/ServiceDetail";
 import DependencyGraph from "./components/DependencyGraph";
@@ -153,13 +154,15 @@ function AppContent() {
         {/* Active Incidents */}
         <IncidentSection incidents={summary.data?.active_incidents} />
 
-        {/* Service Grid (Engineer) or Executive View (Executive) */}
+        {/* Service Grid (Engineer), Executive View, or SLO Fuel-Gauge View */}
         {view === "engineer" ? (
           <ServiceGrid
             services={services.data}
             slaData={sla.data}
             onSelect={setSelectedServiceId}
           />
+        ) : view === "slo" ? (
+          <SloView />
         ) : (
           <ExecutiveView />
         )}

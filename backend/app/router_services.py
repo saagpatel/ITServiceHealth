@@ -4,9 +4,11 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 
+from app.alerting.burn_rate import BurnRateBreach, evaluate_burn_rate
+from app.config import settings
 from app.database import get_db
 from app.dependencies.graph import get_downstream, get_upstream
-from app.sla import compute_uptime
+from app.sla import compute_error_budget_remaining, compute_uptime
 
 router = APIRouter(prefix="/api", tags=["services"])
 
@@ -207,6 +209,75 @@ async def get_service_graph() -> dict:
         "data": {"nodes": nodes, "links": links},
         "error": None,
         "meta": None,
+    }
+
+
+@router.get("/services/slo")
+async def get_services_slo() -> dict:
+    """Per-service SLO snapshot: error budget remaining + any active burn-rate breaches.
+
+    Unlike the scheduled burn-rate cycle which routes Slack alerts, this endpoint
+    reads fresh state synchronously for display consumers (the SLO fuel-gauge view).
+    """
+    db = await get_db()
+    now = datetime.now(UTC)
+    target = settings.slo_target_percent
+
+    cursor = await db.execute(
+        "SELECT id, display_name, category, tier, current_status, poller_health "
+        "FROM services ORDER BY display_name"
+    )
+    rows = await cursor.fetchall()
+
+    services_out: list[dict] = []
+    for row in rows:
+        service_id = row["id"]
+        service_name = row["display_name"] or service_id
+
+        w30d_start = now - timedelta(days=30)
+        w30d = await compute_uptime(db, service_id, w30d_start, now)
+
+        breaches = await evaluate_burn_rate(db, service_id, service_name, now)
+        fast_breach = next((b for b in breaches if b.severity == "fast"), None)
+        slow_breach = next((b for b in breaches if b.severity == "slow"), None)
+
+        budget_remaining = compute_error_budget_remaining(w30d.uptime_percent, target)
+
+        services_out.append({
+            "id": service_id,
+            "display_name": service_name,
+            "category": row["category"],
+            "tier": row["tier"],
+            "current_status": row["current_status"],
+            "poller_health": row["poller_health"],
+            "uptime_30d_pct": w30d.uptime_percent,
+            "error_budget_remaining_pct": round(budget_remaining, 2),
+            "fast_burning": fast_breach is not None,
+            "slow_burning": slow_breach is not None,
+            "fast_breach": _breach_to_dict(fast_breach) if fast_breach else None,
+            "slow_breach": _breach_to_dict(slow_breach) if slow_breach else None,
+        })
+
+    return {
+        "data": {
+            "services": services_out,
+            "thresholds": {
+                "target_percent": target,
+                "fast_threshold": settings.slo_burn_rate_fast_threshold,
+                "slow_threshold": settings.slo_burn_rate_slow_threshold,
+            },
+        },
+        "error": None,
+        "meta": None,
+    }
+
+
+def _breach_to_dict(breach: BurnRateBreach) -> dict:
+    return {
+        "long_window_burn_rate": breach.long_window_burn_rate,
+        "short_window_burn_rate": breach.short_window_burn_rate,
+        "long_window_label": breach.long_window_label,
+        "short_window_label": breach.short_window_label,
     }
 
 
