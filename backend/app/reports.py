@@ -149,6 +149,7 @@ async def generate_incident_report(
         "peak_severity": peak_severity,
         "affected_downstream": affected_names,
         "event_count": len(incident_events),
+        "events": incident_events,
         "impact_summary": impact_summary,
     }
 
