@@ -175,8 +175,11 @@ export function useExecutiveData() {
     // 30-day trend --------------------------------------------------------
     // Backend returns per-service daily points. For the Executive view we
     // want a single strip: mean uptime across monitored services per day,
-    // plus a boolean flag when any service dipped below 100 % (used to
-    // mark alarm-red days on the strip).
+    // plus an alarm flag for days the fleet mean dipped below the SLA
+    // target. The "fleet mean below target" definition aligns with the
+    // SLA KPI tile — same signal, two visualisations — and keeps the
+    // strip from becoming a barcode when a handful of services each have
+    // unrelated single-day dips.
     const historyData = history.data;
     const trend = [];
     if (historyData?.days && historyData?.services) {
@@ -186,20 +189,20 @@ export function useExecutiveData() {
       for (const day of days) {
         let sum = 0;
         let n = 0;
-        let anyDegraded = false;
         for (const sid of svcIds) {
           const points = svcMap[sid] || [];
           const point = points.find((p) => p.date === day);
           if (point && point.uptime !== null && point.uptime !== undefined) {
             sum += point.uptime;
             n += 1;
-            if (point.uptime < 100) anyDegraded = true;
           }
         }
+        const uptimePct = n > 0 ? sum / n : null;
         trend.push({
           date: day,
-          uptimePct: n > 0 ? sum / n : null,
-          anyDegraded,
+          uptimePct,
+          anyDegraded:
+            uptimePct !== null && uptimePct < EXEC_SLA_TARGET,
         });
       }
     }

@@ -12,6 +12,24 @@
 export const EXEC_SLA_TARGET = 99.9;
 export const EXEC_IMPACT_LIMIT = 8;
 
+/** Hex mirror of the Executive-view CSS custom properties.
+ *
+ *  recharts (and SVG in general) cannot resolve var(--color-*) in its
+ *  stroke/fill attributes, so the exec components pass real hex values
+ *  for chart internals. These MUST stay in sync with the @theme block
+ *  in frontend/src/styles/index.css — if a token moves here, it moves
+ *  there too. The zero-hex rule still holds inside
+ *  frontend/src/components/executive/ because the hex lives here, not
+ *  inside the components. */
+export const EXEC_TREND_COLORS = Object.freeze({
+  accentAlarm: "#ef4444",
+  surfaceElev1: "#0f172a",
+  surfaceElev2: "#1b2436",
+  textDim: "#64748b",
+  textDisplay: "#f8fafc",
+  border: "#1e293b",
+});
+
 /** Format a 0-100 uptime percentage to two decimals. */
 export function formatSlaPct(pct) {
   if (pct === null || pct === undefined || Number.isNaN(pct)) return "—";
