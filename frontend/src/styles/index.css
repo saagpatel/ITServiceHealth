@@ -31,6 +31,19 @@
   --color-banner-warn: #78350f;
   --color-banner-crit: #7f1d1d;
 
+  /* Executive-view tokens (Phase 0) — only --color-accent-alarm is an
+     eye-magnet; everything else is neutral surface or typography. */
+  --color-accent-alarm: #ef4444;
+  --color-surface-elev-1: #0f172a;
+  --color-surface-elev-2: #1b2436;
+  --color-text-display: #f8fafc;
+  --color-text-dim: #64748b;
+
+  --text-body: 0.875rem;
+  --text-lede: 1.75rem;
+  --text-h2: 3.5rem;
+  --text-display: 7rem;
+
   --font-sans: "IBM Plex Sans", ui-sans-serif, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
