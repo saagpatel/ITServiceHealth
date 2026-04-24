@@ -141,7 +141,7 @@ async def route_status_change(
       maintenance window → dedup → tier → aggregation → fire
     """
     dedup_key = build_dedup_key(change.service_id, change.new_status, vendor_incident_id)
-    tier, _channel_override = await get_service_tier(db, change.service_id)
+    tier, channel_override = await get_service_tier(db, change.service_id)
 
     if aggregated_under:
         return RoutingDecision(
@@ -188,7 +188,10 @@ async def route_status_change(
             suppressed_by="tier_informational",
         )
 
-    webhook_url = settings.slack_webhook_url_str
+    # slack_channel_override stores a full webhook URL, not a channel name —
+    # Slack webhooks are bound to channels at creation, so routing to a
+    # different channel requires a different webhook URL.
+    webhook_url = channel_override or settings.slack_webhook_url_str
     if not webhook_url:
         return RoutingDecision(
             should_send=False,
