@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     backup_time_hour: int = 2  # UTC hour for daily backup
     backup_retention_days: int = 7
 
+    # SLO burn-rate alerting (Phase 7 item 2)
+    slo_burn_rate_enabled: bool = False
+    slo_target_percent: float = Field(default=99.9, ge=90.0, le=99.99)
+    slo_burn_rate_check_interval_seconds: int = Field(default=300, gt=0, le=3600)
+    slo_burn_rate_fast_threshold: float = Field(default=14.4, gt=0, le=100.0)
+    slo_burn_rate_slow_threshold: float = Field(default=6.0, gt=0, le=100.0)
+    slo_burn_rate_ticket_threshold: float = Field(default=1.0, gt=0, le=100.0)
+
     # Phase 7 — Inbound Statuspage webhooks
     # Feature-gated off by default; set WEBHOOKS_ENABLED=true + a shared secret
     # that matches what you configured in Statuspage subscriber settings.

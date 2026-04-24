@@ -23,12 +23,16 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import aiosqlite
 
 from app.config import settings
 from app.observability.metrics import ALERTS_SENT_TOTAL, ALERTS_SUPPRESSED_TOTAL
 from app.poller.change_detector import StatusChange
+
+if TYPE_CHECKING:
+    from app.alerting.burn_rate import BurnRateBreach
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +251,108 @@ async def record_alert(
     else:
         ALERTS_SENT_TOTAL.labels(
             kind=alert_kind, severity=decision.tier,
+        ).inc()
+
+
+# ── Dependency correlation ──────────────────────────────────────────
+
+# ── SLO burn-rate routing ───────────────────────────────────────────
+
+
+def build_slo_burn_rate_dedup_key(service_id: str, severity: str) -> str:
+    """e.g. 'slo_burn:slack_api:fast' — used by alert_sent_log for dedup."""
+    return f"slo_burn:{service_id}:{severity}"
+
+
+async def route_slo_burn_rate_alert(
+    db: aiosqlite.Connection,
+    breach: BurnRateBreach,
+    webhook_url: str | None,
+    now: datetime,
+) -> RoutingDecision:
+    """Decide whether to fire a burn-rate alert.
+
+    Decision order mirrors route_status_change:
+      dedup → maintenance window → webhook configured → fire
+    """
+    dedup_key = build_slo_burn_rate_dedup_key(breach.service_id, breach.severity)
+    tier = "critical" if breach.severity == "fast" else "important"
+
+    if await was_recently_alerted(db, dedup_key, settings.alert_dedup_window_seconds):
+        return RoutingDecision(
+            should_send=False,
+            webhook_url=None,
+            channel_mention=None,
+            dedup_key=dedup_key,
+            tier=tier,
+            suppressed_by="dedup",
+        )
+
+    if await is_in_maintenance_window(db, breach.service_id):
+        return RoutingDecision(
+            should_send=False,
+            webhook_url=None,
+            channel_mention=None,
+            dedup_key=dedup_key,
+            tier=tier,
+            suppressed_by="maintenance_window",
+        )
+
+    if not webhook_url:
+        return RoutingDecision(
+            should_send=False,
+            webhook_url=None,
+            channel_mention=None,
+            dedup_key=dedup_key,
+            tier=tier,
+            suppressed_by="webhook_not_configured",
+        )
+
+    channel_mention: str | None = "<!here>" if breach.severity == "fast" else None
+    return RoutingDecision(
+        should_send=True,
+        webhook_url=webhook_url,
+        channel_mention=channel_mention,
+        dedup_key=dedup_key,
+        tier=tier,
+        suppressed_by=None,
+    )
+
+
+async def record_slo_alert(
+    db: aiosqlite.Connection,
+    breach: BurnRateBreach,
+    decision: RoutingDecision,
+) -> None:
+    """Append one row to alert_sent_log for a burn-rate breach.
+
+    Parallel to record_alert but accepts a BurnRateBreach instead of a
+    StatusChange (SLO alerts are not tied to a status_events row).
+    """
+    await db.execute(
+        """INSERT INTO alert_sent_log
+           (dedup_key, service_id, status_event_id, severity, new_status,
+            alert_kind, slack_channel, slack_ts, suppressed_by,
+            first_sent_at, last_updated_at)
+           VALUES (?, ?, NULL, ?, ?, ?, NULL, NULL, ?,
+                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+        (
+            decision.dedup_key,
+            breach.service_id,
+            decision.tier,
+            f"slo_{breach.severity}_burn",
+            "slo_burn_rate",
+            decision.suppressed_by,
+        ),
+    )
+
+    if decision.suppressed_by:
+        ALERTS_SUPPRESSED_TOTAL.labels(
+            kind="slo_burn_rate", reason=decision.suppressed_by,
+        ).inc()
+    else:
+        ALERTS_SENT_TOTAL.labels(
+            kind="slo_burn_rate", severity=decision.tier,
         ).inc()
 
 
