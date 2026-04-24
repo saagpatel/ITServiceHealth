@@ -12,8 +12,6 @@ import StatusBanner from "./components/StatusBanner";
 import IncidentSection from "./components/IncidentSection";
 import MaintenanceBanner from "./components/MaintenanceBanner";
 import ServiceGrid from "./components/ServiceGrid";
-// retired in Phase 2
-// import CategorySummary from "./components/CategorySummary";
 import ExecutiveView from "./views/ExecutiveView";
 import Timeline from "./components/Timeline";
 import ServiceDetail from "./components/ServiceDetail";

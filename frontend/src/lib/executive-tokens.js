@@ -1,6 +1,16 @@
 export const EXEC_SLA_TARGET = 99.9;
 export const EXEC_IMPACT_LIMIT = 8;
 
+// recharts doesn't resolve CSS var() in SVG attributes reliably, so the
+// chart needs raw hex. These MUST stay in lock-step with the @theme block
+// in frontend/src/styles/index.css — if you change one, change both.
+export const EXEC_CHART_COLORS = {
+  surfaceElev2: "#1b2436",
+  accentAlarm: "#ef4444",
+  textDisplay: "#f8fafc",
+  textDim: "#64748b",
+};
+
 export const STATUS_RANK = {
   major_outage: 4,
   partial_outage: 3,
