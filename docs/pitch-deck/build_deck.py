@@ -289,14 +289,14 @@ def slide_exec():
 
     # Mockup is 1920x1080 (16:9). Fit by height so it doesn't overflow the
     # slide — height 5.0 in → width 5.0 * 16/9 = 8.89 in. Center horizontally.
-    img_path = "docs/executive-view-redesign/mockups/exec-major.png"
+    img_path = "docs/executive-view-redesign/screenshots/exec-major.png"
     img_w = Inches(8.89)
     img_h = Inches(5.0)
     img_x = (SLIDE_W - img_w) / 2
     s.shapes.add_picture(img_path, img_x, Inches(1.85),
                          width=img_w, height=img_h)
 
-    add_text(s, "Redesigned Executive view · 2 active incidents state",
+    add_text(s, "Executive view · rendered at 1920x1080 · 2 active incidents",
              img_x, Inches(6.9), img_w, Inches(0.22),
              size=9, color=TEXT_MUTED, font=MONO_FONT,
              align=PP_ALIGN.CENTER)
