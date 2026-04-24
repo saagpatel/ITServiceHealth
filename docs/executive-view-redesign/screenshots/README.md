@@ -1,38 +1,23 @@
 # Executive-view screenshots
 
-Target artifacts (per Phase 3 acceptance): `exec-operational.png` and `exec-major.png`, ≥1920 px wide, for the pitch deck (Session 3) and case study (Session 4).
+- `exec-operational.png` — live operational state, all services healthy
+- `exec-major.png` — mocked `major_outage` banner + 3 realistic impact rows (Slack / Okta / Zoom)
 
-Phase 3 verified visually that both states render correctly in the browser at 1920×1080. Final PNG capture is a manual step — the headless preview harness used during development can render the states but doesn't expose a filesystem-writing screenshot API.
+Both captured at 3840×4232 (1920-wide viewport × 2 DPR × full-page scroll).
 
-## Capture procedure
+## Regenerating
 
-Run the dashboard locally (backend on `:8000`, `npm run dev` on `:5173`), then:
-
-### `exec-operational.png` — live state
-
-1. Ensure the backend is healthy (`curl http://127.0.0.1:8000/api/summary` reports `overall_status: operational`).
-2. Resize Chrome to exactly 1920×1080 (DevTools → Device Toolbar → Responsive → 1920×1080).
-3. Open Executive view.
-4. DevTools → Cmd-Shift-P → "Capture full size screenshot".
-5. Save as `exec-operational.png` in this directory.
-
-### `exec-major.png` — major outage state
-
-Requires a service in `major_outage`. Two options:
-
-**Option A — admin endpoint** (preferred; start the backend with `ADMIN_API_TOKEN=<secret>`):
+`frontend/scripts/capture-screenshots.mjs` uses `puppeteer-core` + your system Chrome to capture both states and write them here. `puppeteer-core` is not a project dependency — install it ad-hoc for the capture, don't commit it.
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/admin/status \
-  -H "Authorization: Bearer $ADMIN_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"service_id":"slack","new_status":"major_outage","reason":"pitch-deck screenshot"}'
+# one-time, while the dev stack is up on :5173 + :8000
+cd frontend
+npm install --no-save --legacy-peer-deps puppeteer-core
+node scripts/capture-screenshots.mjs
 ```
 
-Then repeat the capture procedure above. Revert with `"new_status":"operational"` when done.
+Output lands in `docs/executive-view-redesign/screenshots/`.
 
-**Option B — seed-data override**: patch `scripts/seed_demo_data.py` to include at least one service with `major_outage` status, run with `SEED_DEMO_DATA=true`, then capture.
+### Major-outage state
 
-## Why not automated
-
-The development harness captures screenshots inline for verification but doesn't write to disk. Adding a puppeteer/playwright dependency just for this artifact step isn't justified — a once-per-release manual capture is cheaper.
+The script DOM-mocks the major-outage panel, tiles, and the first three impact rows — the live backend can't produce `major_outage` without an admin write. If you want a fully live major-outage screenshot, start the backend with `ADMIN_API_TOKEN=<secret>` set and `POST /api/admin/status` before running the script; then remove the `captureMajor` DOM-eval block.
