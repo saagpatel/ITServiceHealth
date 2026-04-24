@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulse — Production-grade vendor health for IT ops · Case study</title>
+<meta name="description" content="How the Pulse / IT Service Health dashboard was taken from a demo to a production-graded platform: resilience gates, alert hygiene, observability, and the Executive-view redesign that made it readable from the back of the room.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,700;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #faf8f5;
+    --surface: #f3efe9;
+    --surface-2: #ebe6de;
+    --rule: #e0dbd2;
+    --rule-strong: #c9c2b5;
+    --ink: #1a1a1a;
+    --ink-soft: #3c3c3c;
+    --ink-dim: #6a665f;
+    --ink-mute: #8c887f;
+    --accent: #b91c1c;         /* alarm-red, darkened for light bg */
+    --accent-soft: #e4b9b9;
+    --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+
+    --measure: 56ch;           /* renders ~70 chars/line in Plex Sans · inside 65-75 target */
+    --measure-wide: 78ch;
+    --scale-body: 1.0625rem;   /* 17px */
+    --scale-lede: 1.375rem;    /* 22px */
+    --scale-h3: 1.5rem;        /* 24px */
+    --scale-h2: 2.25rem;       /* 36px */
+    --scale-h1: 4.25rem;       /* 68px */
+    --leading-body: 1.65;
+    --leading-display: 1.12;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: var(--scale-body);
+    line-height: var(--leading-body);
+    font-feature-settings: "liga", "kern", "ss01";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* layout shell — center prose within 66ch, figures can break wider */
+  article {
+    max-width: 92rem;
+    margin: 0 auto;
+    padding: clamp(2rem, 4vw, 5rem) clamp(1.25rem, 4vw, 3rem) 6rem;
+  }
+
+  .prose {
+    max-width: var(--measure);
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .prose > * + * { margin-top: 1.1em; }
+
+  /* header / masthead */
+  header.masthead {
+    border-top: 1px solid var(--rule-strong);
+    border-bottom: 1px solid var(--rule);
+    padding: 2.5rem 0 3rem;
+    margin-bottom: 4rem;
+  }
+  header.masthead .inner {
+    max-width: var(--measure-wide);
+    margin: 0 auto;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 1.2rem;
+  }
+  h1.title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--scale-h1);
+    line-height: 0.98;
+    letter-spacing: -0.015em;
+    margin: 0 0 1.2rem;
+    max-width: 14ch;
+  }
+  .deck {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 1.5rem;
+    line-height: 1.35;
+    color: var(--ink-soft);
+    margin: 0 0 2.2rem;
+    max-width: 42ch;
+  }
+  dl.meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.9rem 2rem;
+    margin: 0;
+    padding: 1.2rem 0 0;
+    border-top: 1px solid var(--rule);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--ink-dim);
+    letter-spacing: 0.02em;
+  }
+  dl.meta dt {
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+  }
+  dl.meta dd {
+    margin: 0.25rem 0 0;
+    color: var(--ink);
+  }
+
+  /* section headings */
+  section { margin-top: 4.5rem; }
+  section:first-of-type { margin-top: 0; }
+
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--scale-h2);
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    max-width: 24ch;
+    margin: 0 auto 1.2rem;
+    color: var(--ink);
+  }
+  h2 .num {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+  }
+  h2, h3 { max-width: var(--measure); }
+
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--scale-h3);
+    line-height: 1.25;
+    letter-spacing: -0.005em;
+    margin: 2.2em auto 0.7em;
+    color: var(--ink);
+  }
+
+  .lede {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: var(--scale-lede);
+    line-height: 1.45;
+    color: var(--ink-soft);
+  }
+
+  p { margin: 0; }
+  p + p { margin-top: 1.1em; }
+
+  /* inline emphasis */
+  strong { font-weight: 600; color: var(--ink); }
+  em { font-style: italic; }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a:hover { text-decoration-thickness: 2px; }
+  code, kbd, samp {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: var(--surface);
+    padding: 0.05em 0.35em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+
+  /* lists */
+  ul.tight, ol.tight { padding-left: 1.2rem; margin: 0.6em 0; }
+  ul.tight li + li, ol.tight li + li { margin-top: 0.35em; }
+  ul.tight li, ol.tight li { line-height: 1.5; }
+
+  /* pull quote */
+  .pull {
+    max-width: var(--measure-wide);
+    margin: 3rem auto;
+    padding: 0 2rem;
+    border-left: 3px solid var(--accent);
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 1.5rem;
+    line-height: 1.4;
+    color: var(--ink-soft);
+  }
+
+  /* figures — break wider than prose */
+  figure {
+    max-width: 92rem;
+    margin: 3rem auto;
+  }
+  figure img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    background: #0b1120;
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.06),
+      0 12px 40px -8px rgba(0,0,0,0.18);
+  }
+  figcaption {
+    max-width: var(--measure);
+    margin: 1rem auto 0;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--ink-dim);
+    letter-spacing: 0.01em;
+  }
+
+  /* definition block used for key decisions, alert-hygiene layers, etc. */
+  dl.grid {
+    max-width: var(--measure);
+    margin: 1.5rem auto;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.3rem;
+  }
+  dl.grid > div {
+    display: grid;
+    grid-template-columns: 10rem 1fr;
+    column-gap: 1.5rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--rule);
+  }
+  dl.grid dt {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 500;
+    margin: 0.2em 0 0;
+  }
+  dl.grid dd {
+    margin: 0;
+    color: var(--ink-soft);
+    line-height: 1.55;
+  }
+
+  /* aside callout */
+  aside.note {
+    max-width: var(--measure);
+    margin: 2rem auto;
+    padding: 1.25rem 1.5rem;
+    background: var(--surface);
+    border-left: 3px solid var(--ink-mute);
+    font-size: 0.96rem;
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+  aside.note p + p { margin-top: 0.7em; }
+
+  /* section divider rule */
+  hr.rule {
+    max-width: var(--measure);
+    margin: 4.5rem auto;
+    border: 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  /* footer colophon */
+  footer.colophon {
+    margin: 6rem auto 0;
+    padding: 2.5rem 0 0;
+    border-top: 1px solid var(--rule-strong);
+    max-width: var(--measure-wide);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: var(--ink-dim);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+  footer.colophon h4 {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin: 0 0 0.6rem;
+    font-weight: 500;
+  }
+
+  @media (max-width: 720px) {
+    :root { --scale-h1: 2.75rem; --scale-h2: 1.75rem; }
+    dl.grid > div { grid-template-columns: 1fr; row-gap: 0.4rem; }
+    footer.colophon { grid-template-columns: 1fr; }
+    .pull { font-size: 1.2rem; padding: 0 1rem; }
+  }
+</style>
+</head>
+<body>
+<article>
+
+<header class="masthead">
+  <div class="inner">
+    <p class="eyebrow">Case study · Platform engineering · 2025–2026</p>
+    <h1 class="title">Pulse.</h1>
+    <p class="deck">
+      Production-grade vendor-health monitoring for IT ops. Thirty SaaS
+      vendors, sixty-second cadence, and one panel that reads from the
+      back of a conference room.
+    </p>
+    <dl class="meta">
+      <div><dt>Role</dt><dd>Platform engineering · solo</dd></div>
+      <div><dt>Stack</dt><dd>Python 3.12 · FastAPI · SQLite · React 19 · Tailwind 4</dd></div>
+      <div><dt>Status</dt><dd>v2 shipped · 276 tests passing</dd></div>
+      <div><dt>License</dt><dd>MIT · saagpatel/ITServiceHealth</dd></div>
+    </dl>
+  </div>
+</header>
+
+<section id="problem" class="prose">
+  <h2><span class="num">01 · Problem</span>The vendor-health signal is broken at the operator's desk.</h2>
+
+  <p class="lede">
+    A mid-size IT team supports thirty SaaS vendors. The vendors
+    publish status pages. The status pages lie, lag, or disagree. The
+    help desk fills in the gap.
+  </p>
+
+  <p>
+    Every outage arrives at the help desk before it reaches the vendor's
+    status page. By the time the page flips to yellow, users have
+    already filed tickets, pinged Slack, and escalated to a manager. The
+    vendor's incident is twenty minutes old. The operator's inbox is
+    forty.
+  </p>
+
+  <p>
+    The signal is fragmented, too. Statuspage.io publishes clean JSON
+    for most vendors, but Google Workspace has its own dashboard,
+    Slack has a dedicated API, and eleven of the thirty services have
+    no programmatic feed at all. Eleven services means eleven manual
+    status updates, each of which goes stale within an hour of the
+    engineer who posted it walking away from their desk.
+  </p>
+
+  <p>
+    Slack, which is where the operators live, quickly becomes the war
+    room and the noise floor at the same time. Alerts arrive on the
+    same channel as brownouts, flapping pollers, and planned vendor
+    maintenance windows no one remembered to acknowledge. When an
+    operator has triaged fifty alerts in a week and only three were
+    real, they learn to mute the channel. The next real incident lands
+    in a channel that is, structurally, ignored.
+  </p>
+
+  <p>
+    And above the operator's desk, a director wants one number. They
+    walk up to the big screen in the boardroom and expect the meter to
+    say something. The NOC wall shows eighty tiles and a four-hour
+    timeline. That is the wrong interface for the question being
+    asked.
+  </p>
+</section>
+
+<hr class="rule">
+
+<section id="baseline" class="prose">
+  <h2><span class="num">02 · Baseline architecture</span>What the dashboard does, in one sentence and one picture.</h2>
+
+  <p>
+    Pulse polls every vendor on a sixty-second interval, normalises
+    each response into a five-state enum, detects changes against
+    what it already knows, writes an audit event, enriches the event
+    with a templated impact statement derived from a service
+    dependency graph, posts one clean Block Kit message to Slack,
+    and serves the current world state to a React dashboard as JSON.
+    That sentence is the product.
+  </p>
+
+  <p>
+    The shape of the pipeline matters less than the shape of its
+    failure modes. Vendor APIs fail. Status pages lie. The poller
+    itself runs for months without restart. A correct dashboard is
+    one that answers the question <em>is this service up?</em>
+    honestly, even when the thing it is polling has lost the ability
+    to say.
+  </p>
+
+  <p>
+    The production architecture, below, shows every gate the signal
+    passes through on the way from a vendor's status endpoint to a
+    director's screen. Resilience along the top, alert quality in the
+    middle, observability along the bottom, persistence and edge off
+    to the right.
+  </p>
+</section>
+
+<figure>
+  <img src="assets/architecture.png" alt="Pulse production architecture diagram. Vendor status sources feed an APScheduler poll loop wrapped in stamina retries and a purgatory circuit breaker. The stream flows through a status normaliser, change detector, impact engine, alert-quality layer, SQLite writer, FastAPI layer, and React dashboard. structlog, Prometheus, Sentry, and Healthchecks.io instrument every stage.">
+  <figcaption>
+    Production architecture · vendor pages → resilient poll → alert hygiene → dashboard.
+    Stamina and purgatory along the top; structlog, Prometheus, Sentry, and Healthchecks.io along the bottom.
+  </figcaption>
+</figure>
+
+<section class="prose">
+  <h3>The five states, and why one of them is "unknown"</h3>
+
+  <p>
+    The status normaliser collapses each vendor's proprietary
+    vocabulary into five values: <code>operational</code>,
+    <code>degraded</code>, <code>partial_outage</code>,
+    <code>major_outage</code>, <code>unknown</code>. The first four are
+    routine. The fifth is the one most status dashboards get wrong.
+  </p>
+
+  <p>
+    When the poller cannot reach a vendor — because the vendor's
+    endpoint is down, or DNS is broken, or the corporate proxy has
+    decided today is the day — the service renders as
+    <code>unknown</code>, never <code>operational</code>. This rule is
+    load-bearing. A dashboard that shows green while its own poller is
+    on fire is worse than no dashboard at all, because now the
+    operator has been actively misinformed. The
+    <code>poller_health</code> field carries the rest of the story: a
+    service can be <code>unknown</code> because it has just booted, or
+    because its last three polls failed. The UI distinguishes the
+    two.
+  </p>
+</section>
+
+<hr class="rule">
+
+<section id="production-ready" class="prose">
+  <h2><span class="num">03 · What production-ready meant</span>Seven phases of unglamorous work.</h2>
+
+  <p class="lede">
+    The v1 demo was useful, accurate, and wrong to run in production.
+    Production-ready, in this project, was seven concrete phases. Each
+    phase had an exit criterion. None of them added features.
+  </p>
+
+  <dl class="grid">
+    <div>
+      <dt>Phase 0 · Critical</dt>
+      <dd>
+        Bearer-token admin auth, config validation on boot, and the
+        correctness bugs that had accumulated during the demo sprint.
+        Nothing else ships until a stranger with curl cannot take
+        the service down.
+      </dd>
+    </div>
+    <div>
+      <dt>Phase 1 · Resilience</dt>
+      <dd>
+        <code>stamina</code> for exponential-backoff retries with
+        jitter, <code>purgatory</code> for a per-host circuit
+        breaker that opens after three consecutive failures and stays
+        open for three hundred seconds. The <code>unknown</code> rule
+        above lives here.
+      </dd>
+    </div>
+    <div>
+      <dt>Phase 2 · Alert quality</dt>
+      <dd>
+        Flap suppression, deduplication, severity routing, dependency
+        correlation, maintenance windows. Five sub-layers. One
+        Slack message per real incident.
+      </dd>
+    </div>
+    <div>
+      <dt>Phase 3 · Observability</dt>
+      <dd>
+        <code>structlog</code> JSON with correlation ids,
+        <code>/metrics</code> as Prometheus text exposition, Sentry
+        with release tags, and a Healthchecks.io dead-man's switch on
+        a thirty-second heartbeat.
+      </dd>
+    </div>
+    <div>
+      <dt>Phase 4 · Data lifecycle</dt>
+      <dd>
+        Production SQLite pragmas, an async connection pool,
+        Litestream streaming for ~1 s RPO, a daily <code>VACUUM
+        INTO</code> snapshot, and retention jobs for
+        <code>status_events</code> and <code>alert_sent_log</code>.
+      </dd>
+    </div>
+    <div>
+      <dt>Phase 5 · UX production</dt>
+      <dd>
+        Severity-sorted grid, a distinct poller-broken state in the
+        tile design, keyboard navigation, an Executive/Engineer view
+        toggle, a PWA install path, and a <code>recharts</code> SLA
+        trend inside the service-detail drawer.
+      </dd>
+    </div>
+    <div>
+      <dt>Phase 6 · Platform polish</dt>
+      <dd>
+        GitHub Actions CI with <code>ruff</code> and <code>mypy
+        --strict</code>, a hardened launchd plist, Caddy in front for
+        HTTPS plus header auth, and Keychain for secrets on the Mac
+        Mini it runs on.
+      </dd>
+    </div>
+  </dl>
+
+  <p>
+    None of those phases would show up in a product screenshot. All of
+    them are the difference between a dashboard that behaves the same
+    in year two as it did in week one.
+  </p>
+
+  <aside class="note">
+    <p>
+      Two-thirds of "production-ready" work is negative space. It is
+      everything the system <em>will not</em> do: will not claim green
+      while blind, will not alert twice on the same incident, will not
+      accept an admin write without a bearer token, will not fill the
+      disk with audit events, will not silently fall behind on polls.
+    </p>
+  </aside>
+</section>
+
+<hr class="rule">
+
+<section id="executive-view" class="prose">
+  <h2><span class="num">04 · Executive view</span>One panel. Three meters. Read it from the back of the room.</h2>
+
+  <p class="lede">
+    The Engineer view answers "what is happening right now and why?"
+    The Executive view answers "is everything okay?" Those are
+    different questions and they deserve different interfaces.
+  </p>
+
+  <p>
+    The original Executive view was a list of category rows with a
+    percentage next to each. It worked at a desk. It did not work in a
+    conference room. A director standing ten feet from a monitor could
+    not read the numbers, could not tell if any of the categories were
+    actually in trouble, and had to ask the nearest engineer to zoom
+    in. That is the wrong direction for an escalation path.
+  </p>
+
+  <p>
+    The redesign replaces the category list with four regions stacked
+    vertically. A full-width status panel renders the headline at
+    display scale. Three KPI tiles sit beneath it with the only
+    numbers a leader actually asks for. A thirty-day uptime strip
+    carries the trend without demanding interpretation. An active
+    impact list, worst-first, tells the operator exactly what to go
+    fix.
+  </p>
+</section>
+
+<figure>
+  <img src="assets/exec-view.png" alt="Redesigned Pulse Executive view, active-incident state. A full-width alarm-red panel reads '2 Active Incidents' at display scale with the two service names in the subhead. Beneath it, three KPI tiles show Incidents open 2, Vendors degraded 3, and SLA 30 d at 99.42 percent with a −48 basis-point delta. A 30-day uptime strip shows three red dips. An Active impact list shows Okta SSO (major outage, 24 m) and Zoom (degraded, 11 m), each with a templated impact line.">
+  <figcaption>
+    Executive view · active-incident state at 1920 × 1080. Single alarm-red accent reserved for degraded and major statuses; 2× typography jumps between hierarchy levels.
+  </figcaption>
+</figure>
+
+<section class="prose">
+  <h3>What the visual system enforces</h3>
+
+  <p>
+    The Executive view uses a single alarm-red accent. The panel
+    background is either neutral surface (all good) or alarm-red
+    (something is wrong). No yellow, no orange, no second accent. The
+    rule is deliberate: if two colors mean "pay attention," then
+    neither does. Alarm-red is reserved for degraded and major states
+    and appears nowhere else in this view.
+  </p>
+
+  <p>
+    The type scale jumps by a factor of two at each step: fourteen
+    pixels for body, twenty-eight for the lede, fifty-six for KPI
+    numbers, one hundred and twelve for the headline. That is larger
+    than most design systems allow themselves, and it is the whole
+    point. Hierarchy has to be felt, not decoded. A director should
+    not have to walk closer to read the primary number.
+  </p>
+
+  <p>
+    The screen-reader live region announces status transitions, not
+    every poll. Keyboard users can tab through the active impact list
+    in severity order. Reduced-motion preferences disable every
+    transition. None of that is visible in a screenshot, and all of it
+    is the difference between a dashboard a team can run on an NOC
+    wall and one that is only safe for sighted, able-bodied operators
+    at quiet desks.
+  </p>
+</section>
+
+<hr class="rule">
+
+<section id="alert-hygiene" class="prose">
+  <h2><span class="num">05 · Alert hygiene</span>One message per real incident. No one wakes up twice.</h2>
+
+  <p class="lede">
+    The fastest way to make a Slack channel useless is to fill it with
+    alerts that turn out to be nothing. The alert-quality layer exists
+    to make sure Pulse never does that.
+  </p>
+
+  <p>
+    Alerts pass through five sub-layers before they reach the channel.
+    Any of the five can cause a pending alert to be dropped, deferred,
+    rerouted, or merged with another. Each sub-layer has an
+    environment variable that controls its sensitivity, and each has
+    a specific failure mode it prevents.
+  </p>
+
+  <dl class="grid">
+    <div>
+      <dt>Flap suppression</dt>
+      <dd>
+        A worsening alert only fires after three consecutive
+        confirming polls. A recovery alert requires two. The minimum
+        state duration is six hundred seconds. This catches the
+        five-second blip where a vendor's load balancer hiccups and
+        self-heals before anyone has finished reading the alert.
+      </dd>
+    </div>
+    <div>
+      <dt>Deduplication</dt>
+      <dd>
+        The dedup key is <code>vendor_incident_id</code>, not the
+        message text. A vendor updates its incident description three
+        times in an hour and Pulse sends one alert, not three. The
+        default window is twenty-four hours.
+      </dd>
+    </div>
+    <div>
+      <dt>Tier routing</dt>
+      <dd>
+        Critical and informational tiers route to different channels
+        with different Slack priorities. A brownout on an internal
+        reporting tool and an SSO outage do not share a notification
+        surface, because the responses to them are different and the
+        people who need to respond are different.
+      </dd>
+    </div>
+    <div>
+      <dt>Dependency correlation</dt>
+      <dd>
+        When Okta goes down, every SSO-dependent service starts
+        failing. Instead of cascading twelve alerts, Pulse emits one
+        aggregated upstream alert that names the dependent services
+        affected. The threshold — how many dependents must be
+        affected before the aggregation kicks in — is configurable.
+      </dd>
+    </div>
+    <div>
+      <dt>Maintenance windows</dt>
+      <dd>
+        A first-class table in the database. Scheduled vendor windows
+        suppress alerts for the duration. Windows auto-populate from
+        vendor feeds where possible and are manually insertable for
+        the services that do not publish schedules.
+      </dd>
+    </div>
+  </dl>
+
+  <div class="pull">
+    The alert channel is an interface. An interface that lies is worse
+    than no interface at all.
+  </div>
+
+  <p>
+    The ack flow lives behind a feature flag: off by default because
+    it requires a public reachability path for Slack's interactivity
+    endpoint, which the VPN-only deployment does not yet provide. The
+    code is in the tree; the HMAC verification is implemented; the
+    tests pass; the switch flips when the network path does.
+  </p>
+</section>
+
+<hr class="rule">
+
+<section id="observability" class="prose">
+  <h2><span class="num">06 · Observability</span>If the dashboard were down, I would know in thirty seconds.</h2>
+
+  <p class="lede">
+    An operations dashboard that cannot observe itself is a single
+    point of failure wearing a health badge. Four independent layers
+    carry the signal.
+  </p>
+
+  <p>
+    <code>structlog</code> emits JSON to stderr, with a correlation id
+    attached to every request, poll, and alert dispatch. The handler
+    is <code>WatchedFileHandler</code>, so logrotate does not
+    accidentally send future writes into a deleted inode. That is the
+    kind of bug that only shows up two weeks after a log-rotation
+    cron ran, which is exactly the kind of bug observability exists to
+    prevent.
+  </p>
+
+  <p>
+    Prometheus text exposition lives at <code>/metrics</code>. Poll
+    latency, circuit breaker state, alert dispatch counts, per-service
+    SLA — each has a metric. Any text-format scraper can consume it;
+    we do not need to run a Prometheus server to get the benefit. The
+    metric names are stable enough that an operator can copy one into
+    a query without looking it up.
+  </p>
+
+  <p>
+    Sentry is on for unhandled exceptions, with a release tag set
+    from the git commit at deploy. Traces default to zero sample rate
+    because this is a thirty-second-poll application and nobody needs
+    that data volume. Sentry is insurance; it is not load-bearing.
+  </p>
+
+  <p>
+    Healthchecks.io is the dead-man's switch. The heartbeat job pings
+    every thirty seconds. If the beats stop, an external observer
+    notices — even if the dashboard's own monitoring has broken. The
+    <code>/healthz</code> endpoint returns 503 if the last heartbeat
+    was more than a hundred and twenty seconds ago, so launchd and
+    any external liveness probe agree on what "alive" means.
+  </p>
+
+  <aside class="note">
+    <p>
+      The rule: every layer reports independently. The poller, the
+      API server, the SQLite writer, the browser, and the external
+      monitor all answer the same question on their own terms. If any
+      three of the four internal layers fail silently, the external
+      one still pages.
+    </p>
+  </aside>
+</section>
+
+<hr class="rule">
+
+<section id="platform-engineer" class="prose">
+  <h2><span class="num">07 · Platform Engineer lens</span>What the job looks like from this side of the help-desk.</h2>
+
+  <p class="lede">
+    Pulse is not a side project. It is the shape of the work I want to
+    do next.
+  </p>
+
+  <p>
+    The project started on the IT support side of the org. The pain
+    was real: brownouts with no signal, alerts with too much signal,
+    a leadership team without a meter they could read. The response
+    could have been a spreadsheet. A spreadsheet would have answered
+    the immediate question.
+  </p>
+
+  <p>
+    Platform engineering is what I did with it instead. That meant
+    listening to vendor signal end-to-end, designing resilience
+    gates before writing business logic, refusing to render green
+    when the poller was blind, putting one meter in the conference
+    room that a director could read, and making every layer of the
+    system answer for itself. Each of those decisions has a line of
+    code attached to it, and each of them is a choice I would make
+    again.
+  </p>
+
+  <p>
+    The transition point — from a help-desk engineer who writes
+    scripts to a platform engineer who ships systems — is a set of
+    habits, not a title. It shows up in how you treat an
+    <code>unknown</code> state, in whether you ship your first alert
+    path with dedup, in whether the dashboard you build can run for
+    two years without a developer sitting next to it. The same
+    habits apply whether the platform in question is internal
+    tooling, observability infrastructure, or a developer-facing API.
+    The surface area changes. The rules do not.
+  </p>
+
+  <p>
+    Pulse is, among other things, the proof point for that
+    transition. The code is open and MIT licensed. Every phase of the
+    production-hardening roadmap is documented, every alert-hygiene
+    layer is tunable by env var, and every architectural choice is in
+    the commit log with a rationale. If you are operating a similar
+    tool, the five alert-hygiene layers are worth stealing. If you
+    are procuring one, ask your vendors for these five guarantees
+    instead of feature lists. If you are building one, the repo is
+    there.
+  </p>
+</section>
+
+<footer class="colophon">
+  <div>
+    <h4>Repository</h4>
+    <p>github.com/saagpatel/ITServiceHealth<br>MIT licensed · 276 tests · v2 shipped</p>
+  </div>
+  <div>
+    <h4>Colophon</h4>
+    <p>Typeset in Newsreader and IBM Plex Sans and Mono. Diagram rendered in matplotlib at landscape letter. Executive view mockup rendered at 1920 × 1080.</p>
+  </div>
+</footer>
+
+</article>
+</body>
+</html>
