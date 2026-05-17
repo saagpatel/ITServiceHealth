@@ -70,12 +70,11 @@ async def test_healthz_after_lifespan(_isolated_lifespan):
     """`/healthz` is the dead-man's switch; it must answer once we're up."""
     from app.main import app
 
-    async with LifespanManager(app):
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test",
-        ) as client:
-            resp = await client.get("/healthz")
+    async with LifespanManager(app), AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.get("/healthz")
 
     # Fresh boot → heartbeat is young. Either 200 (scheduler stub still
     # lets heartbeat run) or 503 (stub blocks it) is acceptable — what
@@ -92,12 +91,11 @@ async def test_api_health_after_lifespan(_isolated_lifespan):
     """`/api/health` returns the expected shape after a real boot."""
     from app.main import app
 
-    async with LifespanManager(app):
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test",
-        ) as client:
-            resp = await client.get("/api/health")
+    async with LifespanManager(app), AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.get("/api/health")
 
     assert resp.status_code == 200
     body = resp.json()
