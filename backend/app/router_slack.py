@@ -69,14 +69,16 @@ def _check_slack_timestamp(timestamp: str) -> bool:
         return False
 
 
-def _is_allowed_slack_response_url(response_url: str) -> bool:
-    """Return True only for Slack response_url endpoints."""
+def _slack_response_relative_url(response_url: str) -> str | None:
+    """Return a relative Slack response_url path after host allowlisting."""
     parsed = urllib.parse.urlsplit(response_url)
-    return (
+    if not (
         parsed.scheme == "https"
         and parsed.hostname == _SLACK_RESPONSE_HOST
         and parsed.path.startswith(_SLACK_RESPONSE_PATH_PREFIX)
-    )
+    ):
+        return None
+    return parsed.path + (f"?{parsed.query}" if parsed.query else "")
 
 
 async def _update_ack(
@@ -159,13 +161,17 @@ async def _post_response_url(
         "text": f"\u2713 Acknowledged by @{username} at {now_str}",
     }
 
-    if not _is_allowed_slack_response_url(response_url):
+    response_path = _slack_response_relative_url(response_url)
+    if response_path is None:
         logger.warning("Skipping invalid Slack response_url")
         return
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(response_url, json=payload)
+        async with httpx.AsyncClient(
+            base_url=f"https://{_SLACK_RESPONSE_HOST}",
+            timeout=10.0,
+        ) as client:
+            resp = await client.post(response_path, json=payload)
             if resp.status_code != 200:
                 logger.warning(
                     "Slack response_url returned %d: %s",
