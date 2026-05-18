@@ -250,12 +250,4 @@ if FRONTEND_DIR.exists():
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         """SPA catch-all: serve index.html for all non-API routes."""
-        file_path = (FRONTEND_ROOT / full_path).resolve()
-        try:
-            file_path.relative_to(FRONTEND_ROOT)
-        except ValueError:
-            return FileResponse(FRONTEND_ROOT / "index.html")
-
-        if file_path.is_file():
-            return FileResponse(file_path)
         return FileResponse(FRONTEND_ROOT / "index.html")
