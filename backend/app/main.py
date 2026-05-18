@@ -232,25 +232,30 @@ async def health() -> dict:
 FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend" / "dist"
 
 if FRONTEND_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="static-assets")
+    FRONTEND_ROOT = FRONTEND_DIR.resolve()
+    app.mount("/assets", StaticFiles(directory=FRONTEND_ROOT / "assets"), name="static-assets")
 
     @app.get("/sw.js")
     async def serve_sw():
         """Serve service worker with no-cache headers for immediate update detection."""
-        sw_path = FRONTEND_DIR / "sw.js"
+        sw_path = FRONTEND_ROOT / "sw.js"
         if sw_path.is_file():
             return FileResponse(
                 sw_path,
                 media_type="application/javascript",
                 headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
             )
-        return FileResponse(FRONTEND_DIR / "index.html")
+        return FileResponse(FRONTEND_ROOT / "index.html")
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         """SPA catch-all: serve index.html for all non-API routes."""
-        file_path = (FRONTEND_DIR / full_path).resolve()
-        # Prevent path traversal: ensure resolved path is within FRONTEND_DIR
-        if file_path.is_file() and str(file_path).startswith(str(FRONTEND_DIR.resolve())):
+        file_path = (FRONTEND_ROOT / full_path).resolve()
+        try:
+            file_path.relative_to(FRONTEND_ROOT)
+        except ValueError:
+            return FileResponse(FRONTEND_ROOT / "index.html")
+
+        if file_path.is_file():
             return FileResponse(file_path)
-        return FileResponse(FRONTEND_DIR / "index.html")
+        return FileResponse(FRONTEND_ROOT / "index.html")

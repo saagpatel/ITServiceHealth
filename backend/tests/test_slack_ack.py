@@ -208,6 +208,29 @@ async def test_stale_timestamp_returns_403(ack_client):
     assert resp.status_code == 403
 
 
+async def test_invalid_response_url_is_not_called(ack_client):
+    client, conn = ack_client
+    slack_payload = _build_slack_payload(
+        response_url="https://169.254.169.254/latest/meta-data",
+    )
+    body = _form_body(slack_payload)
+    resp = await client.post(
+        "/api/slack/interactivity",
+        content=body,
+        headers=_build_slack_headers(body),
+    )
+
+    assert resp.status_code == 200
+    cursor = await conn.execute(
+        """SELECT acknowledged_at FROM alert_sent_log
+           WHERE dedup_key = ?""",
+        (DEDUP_KEY,),
+    )
+    row = await cursor.fetchone()
+    assert row is not None
+    assert row["acknowledged_at"] is not None
+
+
 async def test_disabled_returns_404(tmp_path, monkeypatch):
     db_path = str(tmp_path / "test.db")
     await init_db(db_path)
