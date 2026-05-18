@@ -1,5 +1,7 @@
 """Tests for the YAML config loader and database seeder."""
 
+from urllib.parse import urlsplit
+
 import pytest
 
 from app.seed import (
@@ -81,7 +83,7 @@ class TestLoadServices:
         services = load_services()
         box = next(s for s in services if s.id == "box")
         assert box.poll_type == "statuspage_json"
-        assert "status.box.com" in str(box.poll_url)
+        assert urlsplit(str(box.poll_url)).hostname == "status.box.com"
 
 
 class TestLoadDependencies:
