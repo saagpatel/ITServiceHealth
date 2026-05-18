@@ -171,6 +171,8 @@ async def _post_response_url(
             base_url=f"https://{_SLACK_RESPONSE_HOST}",
             timeout=10.0,
         ) as client:
+            # Slack host is fixed by base_url; only the allowlisted Slack path is dynamic.
+            # codeql[py/full-ssrf]
             resp = await client.post(response_path, json=payload)
             if resp.status_code != 200:
                 logger.warning(
