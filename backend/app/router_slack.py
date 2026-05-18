@@ -23,6 +23,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import urllib.parse
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -42,6 +43,7 @@ router = APIRouter(prefix="/api/slack", tags=["slack"])
 _TIMESTAMP_TOLERANCE_SECONDS = 300  # 5 minutes
 _SLACK_RESPONSE_HOST = "hooks.slack.com"
 _SLACK_RESPONSE_PATH_PREFIX = "/actions/"
+_SLACK_RESPONSE_PATH_RE = re.compile(r"^/actions/[A-Za-z0-9/_-]+$")
 
 
 def _verify_slack_signature(
@@ -69,16 +71,19 @@ def _check_slack_timestamp(timestamp: str) -> bool:
         return False
 
 
-def _slack_response_relative_url(response_url: str) -> str | None:
-    """Return a relative Slack response_url path after host allowlisting."""
+def _slack_response_url(response_url: str) -> str | None:
+    """Return a normalized Slack response_url after strict allowlisting."""
     parsed = urllib.parse.urlsplit(response_url)
     if not (
         parsed.scheme == "https"
         and parsed.hostname == _SLACK_RESPONSE_HOST
         and parsed.path.startswith(_SLACK_RESPONSE_PATH_PREFIX)
+        and parsed.query == ""
+        and parsed.fragment == ""
+        and _SLACK_RESPONSE_PATH_RE.fullmatch(parsed.path)
     ):
         return None
-    return parsed.path + (f"?{parsed.query}" if parsed.query else "")
+    return f"https://{_SLACK_RESPONSE_HOST}{parsed.path}"
 
 
 async def _update_ack(
@@ -161,19 +166,14 @@ async def _post_response_url(
         "text": f"\u2713 Acknowledged by @{username} at {now_str}",
     }
 
-    response_path = _slack_response_relative_url(response_url)
-    if response_path is None:
+    validated_response_url = _slack_response_url(response_url)
+    if validated_response_url is None:
         logger.warning("Skipping invalid Slack response_url")
         return
 
     try:
-        async with httpx.AsyncClient(
-            base_url=f"https://{_SLACK_RESPONSE_HOST}",
-            timeout=10.0,
-        ) as client:
-            # Slack host is fixed by base_url; only the allowlisted Slack path is dynamic.
-            # codeql[py/full-ssrf]
-            resp = await client.post(response_path, json=payload)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(validated_response_url, json=payload)
             if resp.status_code != 200:
                 logger.warning(
                     "Slack response_url returned %d: %s",
