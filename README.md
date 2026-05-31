@@ -5,9 +5,9 @@ Real-time status monitoring dashboard for ~30 SaaS services used by Box IT. Poll
 ## Project status
 
 - **v1 (demo-ready) — SHIPPED.** All original spec delivered: polling, normalization, change detection, Slack alerting, React UI, dependency graph, timeline, SLA tracking, incident clustering, auto reports.
-- **v2 (production-ready) — SHIPPED.** Phases 0–6 of the production roadmap complete: bearer-token auth, vendor resilience (stamina + purgatory), alert quality (flap suppression, dedup, tier routing, dependency correlation, maintenance windows, flapping-badge UI), observability (structlog, Prometheus `/metrics`, Sentry, Healthchecks.io dead-man's switch), data lifecycle (production pragmas, retention, Litestream streaming + daily `VACUUM INTO` snapshot), UX productionization (severity-sorted grid, distinct poller-broken state, a11y + keyboard nav, Executive/Engineer view toggle, PWA, `recharts` SLA trend), and platform polish (CI, pre-commit, hardened launchd plist, Caddy, Keychain secrets). **276 tests passing.**
-- **v2 Phase 2B + Phase 7 — in tree, gated off.** Statuspage inbound webhook receiver (`WEBHOOKS_ENABLED`) and Slack ack flow (`SLACK_ACK_ENABLED`) shipped with HMAC verification + tests but default off. Flip the flags once a public reachability path (Cloudflare Tunnel / Caddy allowlist) is in place.
-- **v2 Phase 7 remainder — optional.** Postmortem automation, SLO views, multi-burn-rate alerting, Slack slash-command bot. Not on a fixed schedule; add as demand emerges.
+- **v2 (production-ready) — SHIPPED.** Phases 0–6 of the production roadmap complete: bearer-token auth, vendor resilience (stamina + purgatory), alert quality (flap suppression, dedup, tier routing, dependency correlation, maintenance windows, flapping-badge UI), observability (structlog, Prometheus `/metrics`, Sentry, Healthchecks.io dead-man's switch), data lifecycle (production pragmas, retention, Litestream streaming + daily `VACUUM INTO` snapshot), UX productionization (severity-sorted grid, distinct poller-broken state, a11y + keyboard nav, Executive/Engineer view toggle, PWA, `recharts` SLA trend), and platform polish (CI, pre-commit, hardened launchd plist, Caddy, Keychain secrets). **356 tests passing.**
+- **v2 Phase 2B + Phase 7 — in tree, gated off.** Statuspage inbound webhook receiver (`WEBHOOKS_ENABLED`), Slack ack flow (`SLACK_ACK_ENABLED`), postmortem drafts (`POSTMORTEMS_ENABLED`), SLO fuel-gauge + multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped with tests but default off. Flip each flag once its prerequisites are in place (public endpoint for Slack features; postmortems need only a writable `POSTMORTEMS_DIR`).
+- **v2 Phase 7 remainder — optional.** LLM-layer impact statements, Splunk/JSM/ThousandEyes integration. Not on a fixed schedule; add as demand emerges.
 
 **Active roadmap:** [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md) — exit-criteria detail for every phase.
 **Historical spec:** [IMPLEMENTATION-ROADMAP.md](./IMPLEMENTATION-ROADMAP.md) — archived; v1 is complete.
@@ -152,6 +152,15 @@ Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`, `un
 | `STATUSPAGE_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 shared secret configured in Statuspage → Subscribers → Webhook settings. Required when `WEBHOOKS_ENABLED=true`. |
 | `SLACK_ACK_ENABLED` | `false` | Enable the Slack ack-button flow. Requires public reachability and `SLACK_SIGNING_SECRET`. |
 | `SLACK_SIGNING_SECRET` | _(none)_ | Signing secret from your Slack app's "Basic Information → App Credentials" page. Required when `SLACK_ACK_ENABLED=true`. |
+| `SLACK_SLASH_ENABLED` | `false` | Enable the `/itstatus` slash-command endpoint. Requires public reachability and `SLACK_SIGNING_SECRET`. |
+| `POSTMORTEMS_ENABLED` | `false` | Write Google-SRE-style Markdown postmortem drafts on service recovery. |
+| `POSTMORTEMS_DIR` | `docs/postmortems` | Directory where postmortem drafts are written (created if absent). |
+| `SLO_BURN_RATE_ENABLED` | `false` | Enable the multi-burn-rate SLO alerting scheduler job. |
+| `SLO_TARGET_PERCENT` | `99.9` | SLO uptime target used for error-budget calculations (90.0–99.99). |
+| `SLO_BURN_RATE_CHECK_INTERVAL_SECONDS` | `300` | How often the burn-rate cycle runs (1–3600). |
+| `SLO_BURN_RATE_FAST_THRESHOLD` | `14.4` | Fast-burn multiplier — triggers page-worthy alert (e.g. 14.4× SLO error rate). |
+| `SLO_BURN_RATE_SLOW_THRESHOLD` | `6.0` | Slow-burn multiplier — triggers warning-level alert. |
+| `SLO_BURN_RATE_TICKET_THRESHOLD` | `1.0` | Ticket-severity burn multiplier — low-urgency notification only. |
 
 Copy `.env.example` to `.env` and configure:
 ```bash
@@ -274,21 +283,21 @@ The retention job runs every `RETENTION_INTERVAL_HOURS` (default 168 = weekly) a
 | `/api/timeline` | GET | Recent status change events |
 | `/api/summary` | GET | Overall health + active incidents |
 | `/api/maintenance` | GET | Upcoming scheduled maintenances |
+| `/api/services/uptime` | GET | Per-service per-day worst status over the past 7 days |
+| `/api/services/sla` | GET | Per-service uptime % for 24h, 7d, and 30d windows |
+| `/api/services/sla/history` | GET | Daily uptime % per service (1–90 days, default 30d) |
+| `/api/services/graph` | GET | Service dependency graph (nodes + links) for visualization |
+| `/api/services/slo` | GET | Per-service SLO snapshot: error-budget remaining + active burn-rate breaches |
 | `/api/admin/status` | POST | Manual status update (requires `Authorization: Bearer $ADMIN_API_TOKEN`) |
 | `/healthz` | GET | Dead-man's switch — 200 fresh / 503 stale. Hit by launchd + Healthchecks.io. |
 | `/metrics` | GET | Prometheus text exposition. |
 | `/api/webhooks/statuspage/{id}` | POST | Inbound Statuspage subscriber webhook, HMAC-verified. 404 unless `WEBHOOKS_ENABLED=true`. |
 | `/api/slack/interactivity` | POST | Slack block-actions receiver (ack button). 404 unless `SLACK_ACK_ENABLED=true`. |
+| `/api/slack/slash` | POST | Slack `/itstatus` slash-command handler. 503 unless `SLACK_SLASH_ENABLED=true`. |
 
 ## What's Next
 
-Current production-hardening work is tracked in [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md). Highlights:
+All production phases (0–6) and the primary Phase 7 reach features are complete. Full exit-criteria history is in [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md). Remaining optional work:
 
-- **Phase 0 — Critical fixes:** admin auth, config validation, correctness bugs
-- **Phase 1 — Vendor resilience:** stamina retries + purgatory circuit breakers, per-service health tracking, `unknown` state
-- **Phase 2 — Alert hygiene:** flap suppression, dedup, severity routing, dependency correlation, ack flow
-- **Phase 3 — Observability:** structlog, Prometheus metrics, Sentry, Healthchecks.io dead-man's switch
-- **Phase 4 — Data lifecycle:** connection pool, Litestream backup, retention
-- **Phase 5 — UX production:** TanStack Query, stale-data chip, right-side drawer, a11y + keyboard nav
-- **Phase 6 — Platform polish:** CI, Caddy, keychain secrets, launchd hardening
-- **Phase 7 — Reach (post-v2):** inbound Statuspage webhooks, postmortem automation, SLO views, LLM layer, Splunk/JSM/ThousandEyes integration
+- **Phase 7 — LLM layer:** Natural-language impact statements; deferred post-Phase-7.
+- **Phase 7 — Integrations:** Splunk, ThousandEyes, Datadog, JSM — deferred to org demand.

@@ -11,7 +11,7 @@ Internal web dashboard that aggregates real-time health status of ~30 SaaS servi
 All new sessions must read PRODUCTION-ROADMAP.md before proposing work.
 
 ## Current Phase
-**v2 SHIPPED — Phases 0–6 complete; Phase 2B + Phase 7 (Statuspage inbound webhook + Slack ack) in tree, gated off by default.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. **276 tests passing.** The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
+**v2 SHIPPED — Phases 0–6 complete; Phase 2B + Phase 7 (Statuspage inbound webhook + Slack ack) in tree, gated off by default.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. **356 tests passing.** The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
 
 Main also includes a parallel UX sprint that shipped alongside Phase 5:
 - **Executive / Engineer view toggle** — `ViewContext` gates the grid vs category summary and engineer-only affordances (graph, timeline, shortcuts).
@@ -24,7 +24,7 @@ Main also includes a parallel UX sprint that shipped alongside Phase 5:
 - **Slack ack flow** (`POST /api/slack/interactivity`, v0 signing-secret) — code in `backend/app/router_slack.py`, gated by `SLACK_ACK_ENABLED` (default false). Block Kit messages only include the Acknowledge button when the flag is true.
 - Both features require a public endpoint (Cloudflare Tunnel / Caddy allowlist / ngrok) before flipping the flag. They ship off-by-default so the main app is unaffected.
 
-**Still open on Phase 7** — postmortem automation, SLO fuel-gauge view, multi-burn-rate alerting, Slack slash-command bot.
+**Phase 7 further landed** — postmortem automation (`POSTMORTEMS_ENABLED`), SLO fuel-gauge view + multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped, feature-gated off by default. **Still open:** LLM-layer impact statements, Splunk/JSM/ThousandEyes integration.
 
 ## Tech Stack
 - **Python:** 3.12+
@@ -36,15 +36,20 @@ Main also includes a parallel UX sprint that shipped alongside Phase 5:
 - **Slack alerting:** httpx (raw webhook POST — no SDK needed)
 - **Config:** PyYAML 6.0+
 - **Data validation:** Pydantic 2.10+
-- **Frontend:** React 18 (Vite 6+) + Tailwind CSS 4+
+- **Frontend:** React 19 (Vite 8+) + Tailwind CSS 4+
 - **Process manager:** launchd (macOS) for production
 
-## Production-bound additions (planned per PRODUCTION-ROADMAP.md)
-- **Resilience:** `stamina` (retries) + `purgatory` (circuit breakers)
-- **Observability:** `structlog`, `prometheus-client`, `sentry-sdk[fastapi]`, Healthchecks.io dead-man's switch
-- **DB:** `aiosqlitepool` for reader pool, Litestream for backup
-- **Frontend:** TanStack Query v5, shadcn/ui `Sheet` + `Command`, Lucide icons, Reagraph/React Flow + Dagre
-- **CI:** GitHub Actions with uv; ruff + mypy --strict + pytest
+## Shipped production additions (Phases 0–6)
+
+All of these are in `requirements.txt` and active:
+- **Resilience:** `stamina` (retries) + `purgatory` (per-host circuit breakers)
+- **Observability:** `structlog`, `prometheus-client`, `sentry-sdk[fastapi]`, Healthchecks.io dead-man's switch, `QueueListener` offloads file I/O
+- **DB:** `aiosqlitepool` in requirements (pool migration deferred); Litestream config template in `deploy/`
+- **Frontend:** Lucide icons, `recharts` SLA trend, IBM Plex fonts
+- **CI:** GitHub Actions — `uv`, `ruff`, `mypy --strict`, `pytest`; CodeQL analysis
+
+## Deferred UX additions (optional)
+- TanStack Query v5, shadcn/ui `Sheet` + `Command`, Dagre hierarchical dep graph
 
 ## Development Conventions
 - Python: type hints on all functions, async/await for all I/O, no blocking calls
@@ -52,7 +57,7 @@ Main also includes a parallel UX sprint that shipped alongside Phase 5:
 - Git commits: conventional commits — feat:, fix:, chore:
 - Testing: pytest + pytest-asyncio for backend; **`respx`** for httpx mocking in poller tests
 - Config: all service definitions and dependency mappings in YAML, never hardcoded
-- Logging: structlog JSON (Phase 3); stdlib logging JSON format until then
+- Logging: structlog JSON (Phase 3 complete — structlog is active)
 - Error handling: all HTTP calls wrapped in try/except with timeout, retry, graceful degradation
 
 ## Key Decisions
@@ -92,7 +97,7 @@ Internal web dashboard that aggregates real-time health status of ~30 SaaS servi
 
 ## Current State
 
-**v2 SHIPPED — Phases 0–6 complete; Phase 2B + Phase 7 (Statuspage inbound webhook + Slack ack) in tree, gated off by default.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. **276 tests passing.** The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
+**v2 SHIPPED — Phases 0–6 complete; Phase 2B + Phase 7 (Statuspage inbound webhook + Slack ack) in tree, gated off by default.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. **356 tests passing.** The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
 
 Main also includes a parallel UX sprint that shipped alongside Phase 5:
 - **Executive / Engineer view toggle** — `ViewContext` gates the grid vs category summary and engineer-only affordances (graph, timeline, shortcuts).
@@ -105,7 +110,7 @@ Main also includes a parallel UX sprint that shipped alongside Phase 5:
 - **Slack ack flow** (`POST /api/slack/interactivity`, v0 signing-secret) — code in `backend/app/router_slack.py`, gated by `SLACK_ACK_ENABLED` (default false). Block Kit messages only include the Acknowledge button when the flag is true.
 - Both features require a public endpoint (Cloudflare Tunnel / Caddy allowlist / ngrok) before flipping the flag. They ship off-by-default so the main app is unaffected.
 
-**Still open on Phase 7** — postmortem automation, SLO fuel-gauge view, multi-burn-rate alerting, Slack slash-command bot.
+**Phase 7 further landed** — postmortem automation (`POSTMORTEMS_ENABLED`), SLO fuel-gauge view + multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped, feature-gated off by default. **Still open:** LLM-layer impact statements, Splunk/JSM/ThousandEyes integration.
 
 ## Stack
 
@@ -118,7 +123,7 @@ Main also includes a parallel UX sprint that shipped alongside Phase 5:
 - **Slack alerting:** httpx (raw webhook POST — no SDK needed)
 - **Config:** PyYAML 6.0+
 - **Data validation:** Pydantic 2.10+
-- **Frontend:** React 18 (Vite 6+) + Tailwind CSS 4+
+- **Frontend:** React 19 (Vite 8+) + Tailwind CSS 4+
 - **Process manager:** launchd (macOS) for production
 
 ## How To Run
