@@ -1,7 +1,7 @@
 # Executive-View Redesign — Scoped Addendum
 
 ## Overview
-This bundle redesigns the Executive-view codepath of the Pulse / IT Service Health dashboard so it reads from three meters in a conference room. It is an additive feature inside the existing React frontend — the Engineer view, backend, and polling pipeline are out of scope. The root `CLAUDE.md` at the repo root remains authoritative for everything outside this feature.
+Redesigns the Executive-view codepath of the IT Service Health dashboard so it reads from three meters in a conference room. Additive feature inside the existing React frontend — Engineer view, backend, and polling pipeline are out of scope. The root `CLAUDE.md` at the repo root remains authoritative for everything outside this feature.
 
 ## Tech Stack (this feature only)
 - React: 19.2 (existing)
@@ -9,19 +9,14 @@ This bundle redesigns the Executive-view codepath of the Pulse / IT Service Heal
 - Tailwind CSS: 4.2 — `@theme` token block in `frontend/src/styles/index.css`
 - recharts: 3.8 — already in tree for `SlaChart`; reused by the 30-day trend strip
 - lucide-react: 1.8 — icon set already in tree
-- No new runtime deps. If a task appears to need one, stop and escalate.
+- No new runtime deps. Stop and escalate if a task appears to need one.
 
-## Development Conventions
-- React components: PascalCase files, one component per file, under `frontend/src/components/executive/` for new surfaces and `frontend/src/views/` for the top-level view shell
+## File Conventions
+- New components: `frontend/src/components/executive/` (surfaces), `frontend/src/views/` (view shell)
 - Hooks: kebab-case `use-*.js` under `frontend/src/hooks/`
-- Design tokens: declared only in `@theme` inside `frontend/src/styles/index.css`; never hardcode hex in components
-- No `any`-equivalent escapes — components accept typed props via JSDoc or default-shape destructuring
+- Design tokens: declare only in `@theme` inside `frontend/src/styles/index.css` — no hex values in components
+- Props: type via JSDoc or default-shape destructuring — no `any`-equivalent escapes
 - Commits: conventional commits, e.g. `feat(exec-view): ...`, `style(tokens): ...`
-- After every file change, re-read the diff before committing; follow the root repo's Done = Verify → Commit rule
-
-## Current Phase
-**Phase 0: Foundation (tokens, data hook, view shell)**
-See IMPLEMENTATION-ROADMAP.md for full phase details.
 
 ## Key Decisions
 | Decision | Choice | Why |
@@ -32,11 +27,11 @@ See IMPLEMENTATION-ROADMAP.md for full phase details.
 | View integration | New `ExecutiveView.jsx` replaces the `CategorySummary` render branch inside `App.jsx` when `view === "executive"` | Matches existing `ViewContext` gating; no routing changes |
 | Trend strip library | `recharts` `<AreaChart>` or `<LineChart>` reused from `SlaChart` pattern | No new bundle weight |
 
-## Phase-Boundary Review
-At the end of every phase, run `/ultrareview` before committing the phase-final code. Do not skip on phases that "feel small."
+## Scope Gates
+- **Phase scope:** Implement only what IMPLEMENTATION-ROADMAP.md defines for the current phase. Work outside the active phase requires a discussion first.
+- **Engineer render path:** `ServiceGrid`, `ServiceDetail`, `DependencyGraph`, `Timeline` are out of scope — this feature runs only when `view === "executive"`.
+- **Accent colors:** `--color-accent-alarm` is the sole eye-magnet. Keep all other surfaces neutral; no second accent color, no gradients.
+- **Runtime dependencies:** recharts, lucide-react, tailwind 4, and date-fns are the complete palette. Escalate before adding anything.
 
-## Do NOT
-- Do not add features not in the current phase of IMPLEMENTATION-ROADMAP.md.
-- Do not touch the Engineer render path (`ServiceGrid`, `ServiceDetail`, `DependencyGraph`, `Timeline`). This feature only runs when `view === "executive"`.
-- Do not introduce a second accent color or a gradient. `--color-accent-alarm` is the only eye-magnet; everything else is neutral surface + typography.
-- Do not add runtime dependencies. recharts, lucide-react, tailwind 4, and date-fns are the complete palette.
+## Phase-Boundary Review
+At the end of every phase, run `/code-review` on the branch diff before committing the phase-final code. Do not skip on phases that "feel small." (Note: `/ultrareview` referenced in earlier drafts does not exist; use `/code-review` instead.)

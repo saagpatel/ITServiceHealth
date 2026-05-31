@@ -1,92 +1,83 @@
 # IT Service Health Dashboard
 
-## Overview
-Internal web dashboard that aggregates real-time health status of ~30 SaaS services IT supports at Box. Polls vendor status pages via Statuspage.io JSON API, Google Workspace JSON feed, Slack's native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view and posts alerts to Slack. Deployed on a Mac Mini behind corporate VPN. Designed for IT engineers (deep triage) and IT leadership / company-wide visibility (situational awareness).
+Internal web dashboard aggregating real-time health of ~30 SaaS services at Box. Polls Statuspage.io JSON API, Google Workspace JSON feed, Slack native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view, posts alerts to Slack. Deployed on a Mac Mini behind corporate VPN.
 
-## Roadmap — READ FIRST
+## Roadmap
 
-- **Active roadmap:** [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md) — this is the source of truth for current and upcoming work.
-- **Historical v1 spec:** [IMPLEMENTATION-ROADMAP.md](./IMPLEMENTATION-ROADMAP.md) — v1 is **shipped**; this doc is archived for reference only. Do not start new work against it.
+Active source of truth: [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md) — read before proposing any work.
+Historical v1 spec: [IMPLEMENTATION-ROADMAP.md](./IMPLEMENTATION-ROADMAP.md) — archived, v1 shipped.
 
-All new sessions must read PRODUCTION-ROADMAP.md before proposing work.
+## Stack
 
-## Current Phase
-**v2 SHIPPED — Phases 0–6 complete; Phase 2B + Phase 7 (Statuspage inbound webhook + Slack ack) in tree, gated off by default.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. **356 tests passing.** The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
+- **Python** 3.12+ / FastAPI 0.115+ / httpx 0.28+ / aiosqlite 0.21+ / APScheduler 3.10+
+- **Config / validation:** PyYAML 6.0+ / Pydantic 2.10+ / feedparser 6.0+
+- **Frontend:** React 19 (Vite 8+) + Tailwind CSS 4+; FastAPI serves the built static files
+- **Observability:** structlog (JSON), prometheus-client, sentry-sdk[fastapi], Healthchecks.io
+- **Resilience:** stamina (retries) + purgatory (per-host circuit breakers)
+- **Production process manager:** launchd (macOS); Caddy in front for HTTPS + header auth
 
-Main also includes a parallel UX sprint that shipped alongside Phase 5:
-- **Executive / Engineer view toggle** — `ViewContext` gates the grid vs category summary and engineer-only affordances (graph, timeline, shortcuts).
-- **PWA** — `vite-plugin-pwa` registers a service worker with 55-entry precache; `ReloadPrompt` surfaces updates.
-- **`recharts` SLA trend** — the service-detail drawer renders 7/30-day uptime history.
-- **Daily `VACUUM INTO` backup** — `app/backup.py` writes a snapshot at `settings.backup_time_hour`, independent of Litestream.
+## Build / Test / Run
 
-**Phase 7 partially landed:**
-- **Statuspage inbound webhook** (`POST /api/webhooks/statuspage/{service_id}`, HMAC-SHA256, optional replay protection) — code in `backend/app/router_webhooks.py`, gated by `WEBHOOKS_ENABLED` (default false). Writes directly through the alerting pipeline, bypassing flap suppression.
-- **Slack ack flow** (`POST /api/slack/interactivity`, v0 signing-secret) — code in `backend/app/router_slack.py`, gated by `SLACK_ACK_ENABLED` (default false). Block Kit messages only include the Acknowledge button when the flag is true.
-- Both features require a public endpoint (Cloudflare Tunnel / Caddy allowlist / ngrok) before flipping the flag. They ship off-by-default so the main app is unaffected.
+```bash
+# Set up backend
+python3.13 -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt
 
-**Phase 7 further landed** — postmortem automation (`POSTMORTEMS_ENABLED`), SLO fuel-gauge view + multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped, feature-gated off by default. **Still open:** LLM-layer impact statements, Splunk/JSM/ThousandEyes integration.
+# Build frontend
+cd frontend && npm install && npm run build && cd ..
 
-## Tech Stack
-- **Python:** 3.12+
-- **Backend framework:** FastAPI 0.115+
-- **Async HTTP:** httpx 0.28+
-- **Database:** SQLite via aiosqlite 0.21+
-- **Task scheduling:** APScheduler 3.10+
-- **RSS parsing:** feedparser 6.0+
-- **Slack alerting:** httpx (raw webhook POST — no SDK needed)
-- **Config:** PyYAML 6.0+
-- **Data validation:** Pydantic 2.10+
-- **Frontend:** React 19 (Vite 8+) + Tailwind CSS 4+
-- **Process manager:** launchd (macOS) for production
+# (Optional) seed demo data
+cd backend && python -m scripts.seed_demo_data && cd ..
 
-## Shipped production additions (Phases 0–6)
+# Run — serves dashboard + API on port 8000
+cd backend && python run.py
+```
 
-All of these are in `requirements.txt` and active:
-- **Resilience:** `stamina` (retries) + `purgatory` (per-host circuit breakers)
-- **Observability:** `structlog`, `prometheus-client`, `sentry-sdk[fastapi]`, Healthchecks.io dead-man's switch, `QueueListener` offloads file I/O
-- **DB:** `aiosqlitepool` in requirements (pool migration deferred); Litestream config template in `deploy/`
-- **Frontend:** Lucide icons, `recharts` SLA trend, IBM Plex fonts
-- **CI:** GitHub Actions — `uv`, `ruff`, `mypy --strict`, `pytest`; CodeQL analysis
+Open `http://localhost:8000`.
 
-## Deferred UX additions (optional)
-- TanStack Query v5, shadcn/ui `Sheet` + `Command`, Dagre hierarchical dep graph
+**CI:** GitHub Actions — `uv`, `ruff`, `mypy --strict`, `pytest`; CodeQL analysis. 356 tests passing.
 
-## Development Conventions
-- Python: type hints on all functions, async/await for all I/O, no blocking calls
-- File naming: snake_case for Python, kebab-case for React files, PascalCase for React components
-- Git commits: conventional commits — feat:, fix:, chore:
-- Testing: pytest + pytest-asyncio for backend; **`respx`** for httpx mocking in poller tests
-- Config: all service definitions and dependency mappings in YAML, never hardcoded
-- Logging: structlog JSON (Phase 3 complete — structlog is active)
-- Error handling: all HTTP calls wrapped in try/except with timeout, retry, graceful degradation
+## Conventions
 
-## Key Decisions
-| Decision | Choice | Why |
-|----------|--------|-----|
-| Primary data source | Statuspage.io JSON API (`/api/v2/summary.json`) | Most vendors use Statuspage.io; JSON is structured, no auth, not rate-limited |
-| Google Workspace | Google's custom JSON feed + RSS | Google uses its own status dashboard, not Statuspage.io |
-| Slack status | Slack native Status API (`slack-status.com/api/v2.0.0/current`) | Slack has a dedicated JSON status API |
-| Database | SQLite + Litestream (Phase 4) | Demo-scale + ~1s RPO backup; Postgres deferred to >100 writes/s |
-| LLM layer | None (v1) | Template-based summaries; LLM deferred to post-Phase-7 |
-| Auth | Bearer token on admin endpoints (Phase 0); VPN-only for reads | Demo had no auth; production requires it for writes |
-| Hosting | Mac Mini on corporate network, Caddy in front (Phase 6) | Always-on, VPN-accessible; Caddy adds HTTPS + header auth |
-| Slack alerting | Raw httpx POST with Block Kit; ack buttons (Phase 2) | No SDK needed for webhooks; ack flow requires interactivity endpoint |
-| Frontend serving | FastAPI serves built React static files | Single process, no nginx |
-| Scheduled maintenance | First-class DB table (Phase 2) | Vendor windows auto-populated; suppresses alerts |
+- **I/O:** async/await throughout; no blocking calls in async context.
+- **Config:** service definitions and dependency mappings live in `services.yaml`, never hardcoded in Python.
+- **HTTP calls:** all wrapped in try/except with timeout, retry (stamina), and graceful degradation; return `unknown` status when a poller fails — not `operational`.
+- **Alerting dedup:** use `vendor_incident_id` when available, not message text.
+- **Slack integration:** raw httpx POST for webhooks (no slack-sdk); `POST /api/slack/interactivity` for ack flow.
+- **Feed priority:** prefer JSON API over RSS when both exist.
+- **Poll interval:** minimum 60 seconds (vendor courtesy limit).
+- **File naming:** snake_case Python, kebab-case React files, PascalCase React components.
+- **Commits:** conventional commits — feat:, fix:, chore:.
+- **Testing:** pytest + pytest-asyncio; `respx` for httpx mocking in poller tests.
 
-## Do NOT
-- Do not start work that isn't in a PRODUCTION-ROADMAP.md phase. If it doesn't fit, discuss first.
-- Do not integrate Splunk, ThousandEyes, Datadog, or JSM — those are Phase 7+.
-- Do not build an LLM integration yet — post-Phase-7.
-- Do not remove the bearer-token auth on admin endpoints once added. VPN is not sufficient for write endpoints.
-- Do not use synchronous I/O — all network calls must be async.
-- Do not hardcode service definitions in Python — they live in services.yaml.
-- Do not use slack-sdk — use raw httpx POST for webhook simplicity.
-- Do not parse RSS when a JSON API is available — JSON is always preferred.
-- Do not poll more frequently than every 60 seconds — courtesy limit with vendor APIs.
-- Do not render a service as `operational` when its poller has failed. Use `unknown`.
-- Do not dedup alerts on message text. Use `vendor_incident_id` when available.
-- Do not use force-directed layout as default for the dependency graph. Use hierarchical (Dagre).
+## Key Architecture Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Primary data source | Statuspage.io `/api/v2/summary.json` | Most vendors use Statuspage.io; JSON, no auth, not rate-limited |
+| Google Workspace | Google custom JSON feed + RSS | Google has its own status dashboard, not Statuspage.io |
+| Slack status | `slack-status.com/api/v2.0.0/current` | Dedicated JSON status API |
+| Database | SQLite + Litestream | Demo-scale + ~1s RPO; Postgres deferred to >100 writes/s |
+| Auth | Bearer token on admin endpoints; VPN-only for reads | Bearer token required for write endpoints — VPN alone is insufficient |
+| Hosting | Mac Mini + Caddy | Always-on, VPN-accessible; Caddy adds HTTPS + header auth |
+| Dep graph layout | Hierarchical (Dagre), not force-directed | Force-directed is default-off; Dagre is the production default |
+| LLM layer | Deferred (post-Phase-7) | Template-based summaries sufficient for v2 |
+
+## Feature Gates (off by default)
+
+Phase 7 code is in-tree but gated. Flip only when a public endpoint (Cloudflare Tunnel / Caddy allowlist / ngrok) is available:
+
+- `WEBHOOKS_ENABLED` — `POST /api/webhooks/statuspage/{service_id}` (HMAC-SHA256; `backend/app/router_webhooks.py`). Bypasses flap suppression; writes directly through the alerting pipeline.
+- `SLACK_ACK_ENABLED` — `POST /api/slack/interactivity` (v0 signing-secret; `backend/app/router_slack.py`).
+- `POSTMORTEMS_ENABLED` — postmortem automation.
+- `SLO_BURN_RATE_ENABLED` — SLO fuel-gauge view + multi-burn-rate alerting.
+- `SLACK_SLASH_ENABLED` — Slack `/itstatus` slash command.
+
+**Still open (Phase 7+):** LLM-layer impact statements, Splunk/JSM/ThousandEyes integration.
+
+## Scope Gate
+
+All new work must map to an active phase in PRODUCTION-ROADMAP.md. Splunk, ThousandEyes, Datadog, JSM, and LLM integrations are Phase 7+ — discuss before starting.
 
 <!-- portfolio-context:start -->
 # Portfolio Context
