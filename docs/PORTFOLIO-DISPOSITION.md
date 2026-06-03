@@ -4,7 +4,7 @@
 + React production IT-service status monitoring dashboard for ~30
 SaaS services used by Box IT on `origin/main`. **v1 (demo-ready)
 SHIPPED. v2 (production-ready) SHIPPED through Phase 6 + most of
-Phase 7. 276 tests passing.** Active Phase 7 cadence in flight
+Phase 7. 356 tests passing.** Active Phase 7 cadence in flight
 (postmortem automation, SLO views, multi-burn-rate alerting,
 `/itstatus` slash command bot — all shipped in recent merges).
 **Second member of the self-hosted service cluster** after
@@ -46,7 +46,7 @@ Only `origin` (`saagpatel/ITServiceHealth`). Clean migration state.
     `/metrics` + Sentry + Healthchecks.io dead-man's switch),
     Litestream streaming + daily `VACUUM INTO` snapshot, PWA,
     hardened launchd plist, Caddy reverse proxy, Keychain secrets
-- **276 tests passing**
+- **356 tests passing**
 - `PRODUCTION-ROADMAP.md` + `IMPLEMENTATION-ROADMAP.md` on
   canonical main
 - Default branch: `main`
@@ -71,7 +71,7 @@ seconds. **v1 fully shipped (demo-ready). v2 fully shipped through
 Phase 6 (production-ready). Phase 7 actively in flight** (postmortem
 automation + SLO views + multi-burn-rate alerting + Slack slash
 command + per-service webhook overrides all shipped in the last
-6 merges). **276 tests passing.** Phase 2B + Phase 7 webhooks
+6 merges). **356 tests passing.** Phase 2B + Phase 7 webhooks
 (Statuspage inbound + Slack ack) are gated off pending a public
 reachability path (Cloudflare Tunnel / Caddy allowlist).
 
@@ -175,7 +175,7 @@ internally.
 1. Verify branch tracking.
 2. Working tree clean — no stash needed.
 3. **Re-read `PRODUCTION-ROADMAP.md`** for current Phase 7 state.
-4. Run `pytest` — expect 276 tests passing.
+4. Run `pytest` — expect 356 tests passing.
 5. Verify launchd plist + Caddy config still functional.
 6. Verify Healthchecks.io dead-man's switch is being pinged.
 7. Check Litestream stream + most recent daily snapshot.
