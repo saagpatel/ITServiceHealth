@@ -60,7 +60,7 @@ Open `http://localhost:8000`.
 | Database | SQLite + Litestream | Demo-scale + ~1s RPO; Postgres deferred to >100 writes/s |
 | Auth | Bearer token on admin endpoints; VPN-only for reads | Bearer token required for write endpoints — VPN alone is insufficient |
 | Hosting | Mac Mini + Caddy | Always-on, VPN-accessible; Caddy adds HTTPS + header auth |
-| Dep graph layout | Hierarchical (Dagre), not force-directed | Force-directed is default-off; Dagre is the production default |
+| Dep graph layout | Force-directed (react-force-graph-2d) | Dagre hierarchical layout is deferred; force-directed is current default |
 | LLM layer | Deferred (post-Phase-7) | Template-based summaries sufficient for v2 |
 
 ## Feature Gates (off by default)
