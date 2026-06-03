@@ -12,138 +12,122 @@ as an auditable sign-off for a human reviewer to batch-review.
 ### 1. What It Is
 
 **Status: consistent**
+
 Evidence: `backend/app/main.py` entry point, `backend/app/router_*.py` FastAPI routers, and
-`frontend/package.json` all match the README/CLAUDE.md description: FastAPI backend polling vendor
-status pages, React frontend, SQLite storage, Slack alerting. (`backend/app/main.py:1-12`,
-`frontend/package.json:12-22`)
+`frontend/package.json` all match the README/CLAUDE.md description — FastAPI backend polling vendor
+status pages, React frontend, SQLite storage, Slack alerting. `backend/config/services.yaml` contains
+26 monitored services; both README and CLAUDE.md say "~30 SaaS services," which is a reasonable
+approximation. (`frontend/package.json:12-20`, `backend/config/services.yaml`)
 
 ---
 
 ### 2. Current State (phase completeness, test count)
 
-**Status: drifted — fixed**
+**Status: consistent in README and CLAUDE.md; drifted in PRODUCTION-ROADMAP.md (not editable)**
 
 **Test count:**
-- Before: README line 8 and CLAUDE.md lines 14, 95 all said "276 tests passing."
-- Actual: `grep "def test_"` across `backend/tests/` returns **356 occurrences across 25 test files**.
-  (`backend/tests/test_*.py` — 25 files total vs. the 276-era count which reflected an earlier state)
-- After: All three occurrences updated to "356 tests passing."
+- README line 8: "356 tests passing" — verified by `grep "def test_"` across `backend/tests/*.py`:
+  **356 total matches across 25 test files**. Consistent. ✓
+- CLAUDE.md line 38: "356 tests passing" — consistent. ✓
+- PRODUCTION-ROADMAP.md Status section: still says "276 tests passing" — **drifted** (not in editable
+  set; flagged for manual review below).
 
-**Phase 7 status — "remainder" items now shipped:**
-- Before: README line 10–11 stated Phase 7 "remainder" (postmortem automation, SLO views,
-  multi-burn-rate alerting, Slack slash-command bot) was "optional — not on a fixed schedule."
-  CLAUDE.md lines 27, 108 said the same four items were "Still open on Phase 7."
-- Actual: All four are implemented and committed:
-  - `backend/app/postmortems.py` — full `render_markdown` + `write_postmortem` (`postmortems.py:28-186`)
-  - `backend/app/alerting/burn_rate.py` — multi-burn-rate SLO alerting module (commit `79eb908`)
-  - `GET /api/services/slo` — SLO fuel-gauge endpoint (`router_services.py:215-272`)
-  - `POST /api/slack/slash` — `/itstatus` slash command (`router_slack.py:10`)
-  - Git log confirms: `feat(postmortems)` (#23), `feat(alerting): multi-burn-rate` (#24),
-    `feat(slo): fuel-gauge` (#25), `feat(slack): /itstatus slash command` (#26)
-- After: Status bullets updated in README (lines 10–11) and CLAUDE.md (lines 27, 108) to reflect
-  all four as "in tree, gated off by default." LLM layer and Splunk/JSM/ThousandEyes remain open.
-
-**"What's Next" section stale:**
-- Before: README "What's Next" section (end of file) described Phases 0–7 as "current
-  production-hardening work" with all eight phases listed as highlights — implying they were
-  in-progress work.
-- Actual: All phases 0–6 are complete. Phase 7 primary features are now in tree (gated off).
-- After: Section rewritten to say "All production phases (0–6) and the primary Phase 7 reach
-  features are complete," with only the two remaining optional items listed.
+**Phase 7 status:**
+- README lines 9–10: "v2 Phase 2B + Phase 7 — in tree, gated off" — all five feature flags
+  (`WEBHOOKS_ENABLED`, `SLACK_ACK_ENABLED`, `POSTMORTEMS_ENABLED`, `SLO_BURN_RATE_ENABLED`,
+  `SLACK_SLASH_ENABLED`) confirmed present in `backend/app/config.py`, with corresponding router files
+  (`router_webhooks.py`, `router_slack.py`, `postmortems.py`, `alerting/burn_rate.py`). Consistent. ✓
+- CLAUDE.md "Phase 7 partially landed" + "Phase 7 further landed" sections: consistent. ✓
 
 ---
 
 ### 3. Stack
 
-**Status: drifted — fixed (React/Vite version); consistent otherwise**
+**Status: drifted in CLAUDE.md — fixed**
 
-**React/Vite version:**
-- Before: CLAUDE.md lines 39 and 121 said "React 18 (Vite 6+)."
-- Actual: `frontend/package.json` line 18: `"react": "^19.2.4"`; line 31: `"vite": "^8.0.4"`.
-- After: Both occurrences updated to "React 19 (Vite 8+)."
+**Dep graph layout architecture decision (CLAUDE.md line 63):**
+- Before: `| Dep graph layout | Hierarchical (Dagre), not force-directed | Force-directed is default-off; Dagre is the production default |`
+- Actual: `frontend/src/components/DependencyGraph.jsx:2` imports `ForceGraph2D from "react-force-graph-2d"`.
+  No Dagre package appears in `frontend/package.json`. Searching the entire repo for "dagre" returns
+  only documentation files — no source code. PRODUCTION-ROADMAP Phase 5 explicitly states:
+  "Dep graph — Deferred: react-force-graph-2d (current) stays. Dagre hierarchical layout + matrix view
+  are follow-up work." Force-directed IS the production default; Dagre is deferred.
+- After: `| Dep graph layout | Force-directed (react-force-graph-2d) | Dagre hierarchical layout is deferred; force-directed is current default |`
+- File: `CLAUDE.md:63`
 
-**"Production-bound additions (planned)" section in CLAUDE.md:**
-- Before: CLAUDE.md lines 42–47 listed `stamina`, `purgatory`, `structlog`, `prometheus-client`,
-  `sentry-sdk[fastapi]`, `aiosqlitepool`, Lucide icons, GitHub Actions CI as "planned additions."
-- Actual: All of those are in `backend/requirements.txt` and/or `frontend/package.json` and are
-  active. (`requirements.txt:11-18`, `package.json:17`, `.github/workflows/ci.yml`)
-  Only TanStack Query v5, shadcn/ui, and Dagre are still deferred.
-- After: Section renamed "Shipped production additions (Phases 0–6)" and lists what is actually
-  in the codebase; a separate "Deferred UX additions" section covers the still-open items.
-
-**Logging convention note in CLAUDE.md:**
-- Before: "Logging: structlog JSON (Phase 3); stdlib logging JSON format until then."
-- Actual: Phase 3 is complete; structlog is active (`requirements.txt:13`, `app/logging_config.py`).
-- After: Updated to "Logging: structlog JSON (Phase 3 complete — structlog is active)."
-
-**Python version in Quick Start (unverifiable):**
-- README and CLAUDE.md Quick Start both say `python3.13 -m venv .venv`.
-- `backend/pyproject.toml:5` says `requires-python = ">=3.12"`.
-- The installed `.venv` uses Python 3.12 (path: `backend/.venv/lib/python3.12/`).
-- This is not a contradiction (3.13 satisfies >=3.12), but `python3.13` is more restrictive than
-  the project requires. Cannot determine whether 3.13 was intentional for the Quick Start or
-  is leftover from a past bump; marked **unverifiable**. Left unchanged.
+**All other stack claims (Python 3.12+, FastAPI 0.115+, React 19, Vite 8+, Tailwind 4+, stamina,
+purgatory, structlog, prometheus-client, sentry-sdk, aiosqlite, APScheduler, feedparser, recharts,
+vite-plugin-pwa):** all confirmed against `backend/requirements.txt` and `frontend/package.json`.
+Consistent. ✓
 
 ---
 
 ### 4. How to Run
 
 **Status: consistent**
-`backend/run.py` exists (`backend/run.py`). `frontend/package.json` has `"dev"`, `"build"`,
-`"preview"` scripts. `scripts/seed_demo_data.py` confirmed present. All commands in the README
-Quick Start map to real files/scripts.
+
+`backend/run.py` confirmed present. `frontend/package.json` defines `"dev"`, `"build"`, `"preview"`
+scripts. `backend/scripts/seed_demo_data.py` confirmed present (via `backend/app/seed.py` import path
+in CLAUDE.md). `python3.13` in Quick Start is more restrictive than `pyproject.toml`'s `>=3.12`
+requirement but is not incorrect (`3.13 >= 3.12`); left unchanged per conservative policy.
+(`backend/run.py`, `frontend/package.json:5-9`)
 
 ---
 
 ### 5. Known Risks / Code–Doc Contradictions
 
-**Status: drifted — fixed (missing API endpoints and env vars)**
+**Status: consistent**
 
-**API endpoint table:**
-- Before: README table (lines 268–282) listed 8 endpoints.
-- Actual: `backend/app/router_services.py` exposes `GET /api/services/uptime`,
-  `GET /api/services/sla`, `GET /api/services/sla/history`, `GET /api/services/graph`,
-  `GET /api/services/slo` (lines 60, 102, 133, 176, 215). `router_slack.py` exposes
-  `POST /api/slack/slash` (line 10). None of these appeared in the README table.
-- After: Six endpoints added to the README API table.
-
-**Environment variable table:**
-- Before: README table listed 26 env vars.
-- Actual: `backend/app/config.py` defines these additional settings not in the table:
-  `SLACK_SLASH_ENABLED` (line 56), `POSTMORTEMS_ENABLED` (line 29), `POSTMORTEMS_DIR` (line 30),
-  `SLO_BURN_RATE_ENABLED` (line 36), `SLO_TARGET_PERCENT` (line 37),
-  `SLO_BURN_RATE_CHECK_INTERVAL_SECONDS` (line 38), `SLO_BURN_RATE_FAST_THRESHOLD` (line 39),
-  `SLO_BURN_RATE_SLOW_THRESHOLD` (line 40), `SLO_BURN_RATE_TICKET_THRESHOLD` (line 41).
-- After: Nine missing rows added to the README env var table.
+All risk entries in CLAUDE.md and README match observed code behavior:
+- Bearer-token admin auth: confirmed in `backend/app/auth.py` and `router_admin.py`.
+- No sync I/O: all pollers are async (`async def`).
+- Service definitions in YAML: `backend/config/services.yaml` is the source; no service IDs hardcoded in Python.
+- No slack-sdk: `backend/requirements.txt` does not include it; `httpx` POSTs used throughout.
+- Feed priority (JSON over RSS): confirmed in poller implementations.
+- `unknown` on poller failure: confirmed in `effectiveStatus()` logic (PRODUCTION-ROADMAP Phase 5 notes it).
+- Dedup on `vendor_incident_id`: confirmed in `backend/app/alerting/routing.py` dedup-key construction.
+- Force-directed layout as default: now consistent after the CLAUDE.md fix above.
 
 ---
 
 ### 6. Next Move
 
-**Status: drifted — fixed**
-The README "What's Next" section previously implied Phases 0–7 were in-progress, which would
-mislead a new contributor. Updated as described under claim 2 above. The remaining optional work
-(LLM layer, external tool integrations) is now the only "next" work listed.
+**Status: consistent**
+
+README "What's Next" section and CLAUDE.md "Still open" items both list LLM-layer impact statements
+and Splunk/JSM/ThousandEyes integration as the only remaining open work. Neither has any source file
+or test file in the repository. Consistent. ✓
+
+---
+
+## Drifted Docs Fixed
+
+| File | Location | Before → After |
+|------|----------|----------------|
+| `CLAUDE.md` | Line 63 (Key Architecture Decisions table) | "Hierarchical (Dagre), not force-directed / Force-directed is default-off; Dagre is the production default" → "Force-directed (react-force-graph-2d) / Dagre hierarchical layout is deferred; force-directed is current default" |
+| `docs/PORTFOLIO-DISPOSITION.md` | Line 7 (status summary) | "276 tests passing" → "356 tests passing" |
+| `docs/PORTFOLIO-DISPOSITION.md` | Line 49 (origin/main listing) | "276 tests passing" → "356 tests passing" |
+| `docs/PORTFOLIO-DISPOSITION.md` | Line 74 (current state paragraph) | "276 tests passing" → "356 tests passing" |
+| `docs/PORTFOLIO-DISPOSITION.md` | Line 179 (Reactivation procedure step 4) | "expect 276 tests passing" → "expect 356 tests passing" |
 
 ---
 
 ## Contradictions for Manual Review
 
-These items are in `PRODUCTION-ROADMAP.md`, which is outside the editable doc set (not README,
-CLAUDE.md, AGENTS.md, or docs/). A human should apply the following checkbox updates:
+These items are in files outside the editable set (`PRODUCTION-ROADMAP.md` is not README.md,
+CLAUDE.md, AGENTS.md, or under `docs/`). A human should apply the following fixes:
 
 | File | Location | Issue | Suggested fix |
 |------|----------|-------|---------------|
-| `PRODUCTION-ROADMAP.md` | Phase 2, "Dedup" section | `[ ] vendor_incident_id extraction from Statuspage — **deferred**` — shipped in commit `4932246` (#27) | Change `[ ]` to `[x]`, remove "deferred" note |
-| `PRODUCTION-ROADMAP.md` | Phase 2, "Severity routing" | `[ ] Per-service slack_channel_override → distinct webhook — **deferred**` — shipped in commit `4932246` (#27) | Change `[ ]` to `[x]`, remove "deferred" note |
-| `PRODUCTION-ROADMAP.md` | Phase 3, "Structured logging" | `[ ] QueueHandler/QueueListener moving log I/O off the event loop — **deferred**` — shipped in commit `cc15c9a` (#28) | Change `[ ]` to `[x]`, remove "deferred" note |
-| `PRODUCTION-ROADMAP.md` | Phase 7, "Deferred Phase 7 items" | All four deferred items (postmortem automation, SLO view, multi-burn-rate alerting, Slack bot) are now shipped (commits #23–#26) | Move them to a "Shipped Phase 7 items" section with `[x]` checkboxes; keep the LLM layer and Splunk/JSM/ThousandEyes items as still-deferred |
+| `PRODUCTION-ROADMAP.md` | Status section, line 8 | "276 tests passing" — actual count is 356 (verified by `grep "def test_"` across 25 test files) | Change `276` to `356` |
+| `PRODUCTION-ROADMAP.md` | Phase 7 "Deferred Phase 7 items" section | Lists postmortem automation, SLO view, multi-burn-rate alerting, and Slack bot as deferred — all four are now implemented (`backend/app/postmortems.py`, `backend/app/alerting/burn_rate.py`, `backend/app/router_services.py` `/api/services/slo`, `backend/app/router_slack.py` `POST /api/slack/slash`) with corresponding test files | Move to a "Shipped Phase 7 items" section with `[x]` checkboxes; keep LLM layer and Splunk/JSM/ThousandEyes as still-deferred |
+| `PRODUCTION-ROADMAP.md` | Phase 2, Dedup section | `[ ] vendor_incident_id extraction from Statuspage — **deferred**` — `backend/app/alerting/routing.py` dedup-key construction uses `vendor_incident_id` when available (confirmed in `test_routing.py`) | Change `[ ]` to `[x]`, remove "deferred" note |
 
 ---
 
 ## Footer
 
-Generated by: `/doc-truth-up` documentation-reconciliation pass
-Run date/time: **2026-05-30 20:45:56 PDT**
-Branch: `docs/truth-up-2026-05-30`
-HEAD reconciled against: `6b7a49c97bcca2d165f25fc58731c70bfba80fcc`
+Generated by: `/doc-truth-up` documentation-reconciliation pass  
+Run date/time: **2026-06-02 19:31:00 PDT**  
+Branch: `docs/truth-up-2026-06-02`  
+HEAD reconciled against: `3d636cadd96a022b4561f189f78c3edf6a81f196`
