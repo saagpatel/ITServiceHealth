@@ -239,7 +239,7 @@ def slide_title():
     )
     add_text(
         s,
-        "Thirty SaaS vendors. Sixty-second cadence. Two hundred seventy-six tests.\n"
+        "Thirty SaaS vendors. Sixty-second cadence. Three hundred fifty-six tests.\n"
         "Built in an enterprise IT environment as a Platform Engineer transition proof point.",
         Inches(0.9),
         Inches(5.2),
@@ -446,7 +446,7 @@ def slide_what():
     stat_defs = [
         ("30", "SaaS vendors"),
         ("60 s", "poll cadence"),
-        ("276", "tests passing"),
+        ("356", "tests passing"),
         ("~1 s", "RPO · Litestream"),
     ]
     stat_w = Inches(3.1)
@@ -907,7 +907,7 @@ def slide_results():
     # left column: big stats
     stats = [
         ("7", "production phases shipped"),
-        ("276", "tests passing"),
+        ("356", "tests passing"),
         ("~1 s", "RPO · Litestream streaming"),
         ("< 30 s", "p50 vendor-status detection"),
     ]

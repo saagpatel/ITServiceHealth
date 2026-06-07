@@ -193,7 +193,7 @@ internally.
 | Default branch | `main` |
 | Build system | Python + FastAPI + SQLite + React + Caddy reverse proxy + launchd + macOS Keychain |
 | Service count | ~30 SaaS services monitored |
-| Test count | **276 tests passing** |
+| Test count | **356 tests passing** |
 | Audience | **Enterprise IT (operator's employer)** — corporate-context self-hosted |
 | Phases shipped | v1 demo-ready + v2 production-ready Phases 0-6 + Phase 7 items 1-4 (postmortems + SLO views + multi-burn-rate alerting + /itstatus slash command) |
 | Observability stack | structlog + Prometheus `/metrics` + Sentry + Healthchecks.io dead-man's switch |

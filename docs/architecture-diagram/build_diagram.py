@@ -135,7 +135,7 @@ text(5, 79.5, "Pulse — IT Service Health", size=18, color=TEXT_PRIMARY, weight
 text(
     5,
     76.2,
-    "Production architecture · vendor status pages → React dashboard · v2 shipped · 276 tests",
+    "Production architecture · vendor status pages → React dashboard · v2 shipped · 356 tests",
     size=9,
     color=TEXT_SECONDARY,
 )
