@@ -1,6 +1,6 @@
 # IT Service Health Dashboard
 
-Internal web dashboard aggregating real-time health of ~30 SaaS services at Box. Polls Statuspage.io JSON API, Google Workspace JSON feed, Slack native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view, posts alerts to Slack. Deployed on a Mac Mini behind corporate VPN.
+Internal web dashboard aggregating real-time health of ~30 SaaS services in an enterprise IT environment. Polls Statuspage.io JSON API, a cloud productivity suite's JSON feed, a chat vendor's native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view, posts alerts to Slack. Deployed on a Mac Mini on the internal network.
 
 ## Roadmap
 
@@ -55,11 +55,11 @@ Open `http://localhost:8000`.
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Primary data source | Statuspage.io `/api/v2/summary.json` | Most vendors use Statuspage.io; JSON, no auth, not rate-limited |
-| Google Workspace | Google custom JSON feed + RSS | Google has its own status dashboard, not Statuspage.io |
-| Slack status | `slack-status.com/api/v2.0.0/current` | Dedicated JSON status API |
+| Cloud productivity suite | Custom JSON feed + RSS | Has its own status dashboard, not Statuspage.io |
+| Chat vendor status | Vendor JSON status endpoint | Dedicated JSON status API |
 | Database | SQLite + Litestream | Demo-scale + ~1s RPO; Postgres deferred to >100 writes/s |
-| Auth | Bearer token on admin endpoints; VPN-only for reads | Bearer token required for write endpoints — VPN alone is insufficient |
-| Hosting | Mac Mini + Caddy | Always-on, VPN-accessible; Caddy adds HTTPS + header auth |
+| Auth | Bearer token on admin endpoints; internal-network-only for reads | Bearer token required for write endpoints — the internal network alone is insufficient |
+| Hosting | Mac Mini + Caddy | Always-on, internal-network-accessible; Caddy adds HTTPS + header auth |
 | Dep graph layout | Force-directed (react-force-graph-2d) | Dagre hierarchical layout is deferred; force-directed is current default |
 | LLM layer | Deferred (post-Phase-7) | Template-based summaries sufficient for v2 |
 
@@ -84,7 +84,7 @@ All new work must map to an active phase in PRODUCTION-ROADMAP.md. Splunk, Thous
 
 ## What This Project Is
 
-Internal web dashboard that aggregates real-time health status of ~30 SaaS services IT supports at Box. Polls vendor status pages via Statuspage.io JSON API, Google Workspace JSON feed, Slack's native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view and posts alerts to Slack. Deployed on a Mac Mini behind corporate VPN. Designed for IT engineers (deep triage) and IT leadership / company-wide visibility (situational awareness).
+Internal web dashboard that aggregates real-time health status of ~30 SaaS services supported by an enterprise IT team. Polls vendor status pages via Statuspage.io JSON API, a cloud productivity suite's JSON feed, a chat vendor's native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view and posts alerts to Slack. Deployed on a Mac Mini on the internal network. Designed for IT engineers (deep triage) and IT leadership / company-wide visibility (situational awareness).
 
 ## Current State
 
@@ -144,7 +144,7 @@ Open `http://localhost:8000` in your browser.
 - Do not start work that isn't in a PRODUCTION-ROADMAP.md phase. If it doesn't fit, discuss first.
 - Do not integrate Splunk, ThousandEyes, Datadog, or JSM — those are Phase 7+.
 - Do not build an LLM integration yet — post-Phase-7.
-- Do not remove the bearer-token auth on admin endpoints once added. VPN is not sufficient for write endpoints.
+- Do not remove the bearer-token auth on admin endpoints once added. The internal network is not sufficient for write endpoints.
 - Do not use synchronous I/O — all network calls must be async.
 - Do not hardcode service definitions in Python — they live in services.yaml.
 - Do not use slack-sdk — use raw httpx POST for webhook simplicity.

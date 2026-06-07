@@ -1,7 +1,7 @@
 # Executive-view screenshots
 
 - `exec-operational.png` — live operational state, all services healthy
-- `exec-major.png` — mocked `major_outage` banner + 3 realistic impact rows (Slack / Okta / Zoom)
+- `exec-major.png` — mocked `major_outage` banner + 3 realistic impact rows (chat platform / identity provider / video conferencing)
 
 Both captured at 3840×4232 (1920-wide viewport × 2 DPR × full-page scroll).
 
