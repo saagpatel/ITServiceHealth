@@ -110,7 +110,7 @@ Alert fatigue is the #1 killer of status dashboards. Current pipeline fires on e
 
 ### Severity routing (config-driven)
 - [x] `tier` (`critical | important | informational`) + `slack_channel_override` added to `services.yaml`, `ServiceConfig`, and the DB via migration 0006.
-- [x] `okta`, `duo`, `slack` tagged `critical`; everything else defaults to `important` so operators explicitly elect services into the `@here` tier.
+- [x] The identity provider (SSO), MFA, and chat platform tagged `critical`; everything else defaults to `important` so operators explicitly elect services into the `@here` tier.
 - [x] `route_status_change()` applies routing:
   - `critical` → Slack + `<!here>` mention
   - `important` → Slack, no mention
@@ -218,7 +218,7 @@ If the app goes down, nobody knows. Fix meta-monitoring.
 
 ### Backup: Litestream
 - [x] `deploy/litestream.yml.example` — template supporting local-file, S3, and SFTP replicas (operator picks one).
-- [x] `deploy/com.box.it-health-dashboard-litestream.plist.example` — sidecar launchd daemon with `KeepAlive` dict form, `ThrottleInterval`, macOS Keychain-sourced credentials (never hardcoded).
+- [x] `deploy/com.company.it-health-dashboard-litestream.plist.example` — sidecar launchd daemon with `KeepAlive` dict form, `ThrottleInterval`, macOS Keychain-sourced credentials (never hardcoded).
 - [x] README "Backup & Disaster Recovery" section documents install → validate → replicate → restore with exact commands.
 
 ### Retention
@@ -316,7 +316,7 @@ If the app goes down, nobody knows. Fix meta-monitoring.
 - [x] End-to-end integration — new `tests/test_e2e_pipeline.py::test_poll_change_db_alert_pipeline`. Drives three `respx`-mocked polls through `poll_statuspage → detect_changes → process_changes → Slack POST`, asserts flap suppression holds the first major_outage reading, change emits on the second, Slack webhook receives one POST with `<!here>`, and `alerts_sent_total{kind=status_change,severity=critical}` increments exactly once.
 
 ### launchd hardening
-- [x] `com.box.it-health-dashboard.plist` rewritten with dict-form `KeepAlive` (`SuccessfulExit=false`, `Crashed=true`) so deliberate stops stick.
+- [x] `com.company.it-health-dashboard.plist` rewritten with dict-form `KeepAlive` (`SuccessfulExit=false`, `Crashed=true`) so deliberate stops stick.
 - [x] `ThrottleInterval=30` prevents crash-loop pegging on bad config.
 - [x] `PYTHONUNBUFFERED=1` so stdout reaches the log file in real time.
 - [x] `ProcessType=Background`, `SoftResourceLimits.NumberOfFiles=4096`.
@@ -353,7 +353,7 @@ If the app goes down, nobody knows. Fix meta-monitoring.
 - **Postmortem automation** — Google-SRE-template Markdown per incident, committed to a repo (Summary → Impact → Root Cause → Timeline → What Went Well/Poorly/Lucky → Action Items categorized Prevent/Mitigate/Detect/Repair).
 - **SLO view** — Grafana-style fuel gauge (remaining error budget) + burn-rate line with 1× / 6× / 14.4× thresholds per tier.
 - **Multi-burn-rate alerting** — Google SRE canonical pattern: require both long and short window to breach before paging.
-- **Slack bot** — `/itstatus okta` slash command, natural-language deferred to post-LLM phase.
+- **Slack bot** — `/itstatus` slash command (e.g. query by service name), natural-language deferred to post-LLM phase.
 
 ---
 

@@ -25,7 +25,7 @@ One postmortem per incident; the same incident is never double-written.
 1. Read the generated draft; fill in the human-authored sections marked `_TODO_`.
 2. Flip `status: draft` → `status: reviewed` in the YAML frontmatter.
 3. `git add` + commit when ready.
-4. (Optional) Cross-reference in team wiki, Jira, or your postmortem library.
+4. (Optional) Cross-reference in your team wiki or postmortem library.
 
 ## Gating
 

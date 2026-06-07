@@ -1,7 +1,8 @@
-"""Zendesk Status API poller.
+"""Active incidents API poller.
 
-Fetches active incidents from status.zendesk.com/api/incidents/active
-and maps to our status model.
+Fetches active incidents from a JSON incidents endpoint and maps to
+our status model. The response envelope wraps incident objects under
+a "data" key; an empty array means operational.
 """
 
 import logging
@@ -15,11 +16,11 @@ from app.poller.statuspage_poller import PollResult
 logger = logging.getLogger(__name__)
 
 
-async def poll_zendesk(
+async def poll_active_incidents(
     client: httpx.AsyncClient,
     poll_url: str,
 ) -> PollResult:
-    """Poll the Zendesk Status API for active incidents.
+    """Poll an active-incidents JSON endpoint.
 
     Returns { data: [...incidents], included: [...] }.
     Empty data array means operational.
@@ -29,7 +30,7 @@ async def poll_zendesk(
         body = response.json()
     except Exception as e:
         detail, reason = describe_fetch_error(e)
-        logger.warning("Zendesk poll failed: %s (%s)", detail, reason)
+        logger.warning("Active-incidents poll failed: %s (%s)", detail, reason)
         return PollResult(
             status=ServiceStatus.UNKNOWN,
             status_detail=detail,
@@ -41,7 +42,7 @@ async def poll_zendesk(
     if not incidents:
         return PollResult(
             status=ServiceStatus.OPERATIONAL,
-            page_name="Zendesk",
+            page_name="Active Incidents",
             incidents=[],
         )
 
@@ -68,6 +69,6 @@ async def poll_zendesk(
     return PollResult(
         status=severity,
         status_detail=status_detail,
-        page_name="Zendesk",
+        page_name="Active Incidents",
         incidents=incidents,
     )

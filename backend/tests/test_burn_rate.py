@@ -42,7 +42,9 @@ _CREATE_SVC = (
 )
 
 
-async def _seed_service(db: aiosqlite.Connection, service_id: str = _SVC, name: str = _SVC_NAME) -> None:
+async def _seed_service(
+    db: aiosqlite.Connection, service_id: str = _SVC, name: str = _SVC_NAME
+) -> None:
     await db.execute(_CREATE_SVC, (service_id, name))
     await db.commit()
 
@@ -149,10 +151,14 @@ def _stub_compute_uptime(
         for ws, pct in window_to_uptime.items():
             if abs((window - ws).total_seconds()) < 2.0:
                 if pct is None:
-                    return WindowUptime(operational_seconds=0.0, tracked_seconds=0.0, uptime_percent=None)
+                    return WindowUptime(
+                        operational_seconds=0.0, tracked_seconds=0.0, uptime_percent=None
+                    )
                 total = ws.total_seconds()
                 op = total * (pct / 100.0)
-                return WindowUptime(operational_seconds=op, tracked_seconds=total, uptime_percent=pct)
+                return WindowUptime(
+                    operational_seconds=op, tracked_seconds=total, uptime_percent=pct
+                )
         return WindowUptime(operational_seconds=0.0, tracked_seconds=0.0, uptime_percent=None)
 
     monkeypatch.setattr(br_module, "compute_uptime", _fake)
@@ -227,16 +233,21 @@ class TestBurnRateMath:
 
     @pytest.mark.asyncio
     async def test_burn_rate_math_matches_hand_calc(
-        self, db_with_svc: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch,
+        self,
+        db_with_svc: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """97.12% uptime -> 2.88% failure rate -> 28.8x burn at 99.9% SLO -> fast breach."""
-        _stub_compute_uptime(monkeypatch, {
-            timedelta(minutes=5):  97.12,
-            timedelta(minutes=30): 100.0,
-            timedelta(hours=1):    97.12,
-            timedelta(hours=6):    100.0,
-            timedelta(days=30):    99.95,
-        })
+        _stub_compute_uptime(
+            monkeypatch,
+            {
+                timedelta(minutes=5): 97.12,
+                timedelta(minutes=30): 100.0,
+                timedelta(hours=1): 97.12,
+                timedelta(hours=6): 100.0,
+                timedelta(days=30): 99.95,
+            },
+        )
         breaches = await evaluate_burn_rate(db_with_svc, _SVC, _SVC_NAME, datetime.now(UTC))
 
         fast_breaches = [b for b in breaches if b.severity == "fast"]
@@ -247,31 +258,41 @@ class TestBurnRateMath:
 
     @pytest.mark.asyncio
     async def test_fast_breach_requires_both_windows(
-        self, db_with_svc: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch,
+        self,
+        db_with_svc: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """5m high burn but 1h low burn -> no fast breach."""
-        _stub_compute_uptime(monkeypatch, {
-            timedelta(minutes=5):  97.0,  # ~30x burn
-            timedelta(minutes=30): 100.0,
-            timedelta(hours=1):    99.5,  # ~5x burn, below 14.4 fast threshold
-            timedelta(hours=6):    100.0,
-            timedelta(days=30):    100.0,
-        })
+        _stub_compute_uptime(
+            monkeypatch,
+            {
+                timedelta(minutes=5): 97.0,  # ~30x burn
+                timedelta(minutes=30): 100.0,
+                timedelta(hours=1): 99.5,  # ~5x burn, below 14.4 fast threshold
+                timedelta(hours=6): 100.0,
+                timedelta(days=30): 100.0,
+            },
+        )
         breaches = await evaluate_burn_rate(db_with_svc, _SVC, _SVC_NAME, datetime.now(UTC))
         assert [b for b in breaches if b.severity == "fast"] == []
 
     @pytest.mark.asyncio
     async def test_slow_breach_requires_both_windows(
-        self, db_with_svc: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch,
+        self,
+        db_with_svc: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """30m high burn but 6h low burn -> no slow breach."""
-        _stub_compute_uptime(monkeypatch, {
-            timedelta(minutes=5):  100.0,
-            timedelta(minutes=30): 99.0,  # 10x burn
-            timedelta(hours=1):    100.0,
-            timedelta(hours=6):    99.8,  # 2x burn, below 6.0 slow threshold
-            timedelta(days=30):    100.0,
-        })
+        _stub_compute_uptime(
+            monkeypatch,
+            {
+                timedelta(minutes=5): 100.0,
+                timedelta(minutes=30): 99.0,  # 10x burn
+                timedelta(hours=1): 100.0,
+                timedelta(hours=6): 99.8,  # 2x burn, below 6.0 slow threshold
+                timedelta(days=30): 100.0,
+            },
+        )
         breaches = await evaluate_burn_rate(db_with_svc, _SVC, _SVC_NAME, datetime.now(UTC))
         assert [b for b in breaches if b.severity == "slow"] == []
 
@@ -294,16 +315,21 @@ class TestBurnRateMath:
 
     @pytest.mark.asyncio
     async def test_both_fast_and_slow_can_fire_simultaneously(
-        self, db_with_svc: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch,
+        self,
+        db_with_svc: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """All four windows at high burn -> 2 breaches returned (fast + slow)."""
-        _stub_compute_uptime(monkeypatch, {
-            timedelta(minutes=5):  97.0,
-            timedelta(minutes=30): 97.0,
-            timedelta(hours=1):    97.0,
-            timedelta(hours=6):    97.0,
-            timedelta(days=30):    99.95,
-        })
+        _stub_compute_uptime(
+            monkeypatch,
+            {
+                timedelta(minutes=5): 97.0,
+                timedelta(minutes=30): 97.0,
+                timedelta(hours=1): 97.0,
+                timedelta(hours=6): 97.0,
+                timedelta(days=30): 99.95,
+            },
+        )
         breaches = await evaluate_burn_rate(db_with_svc, _SVC, _SVC_NAME, datetime.now(UTC))
         severities = {b.severity for b in breaches}
         assert "fast" in severities
@@ -312,48 +338,63 @@ class TestBurnRateMath:
 
     @pytest.mark.asyncio
     async def test_error_budget_remaining_pct_from_30d_uptime(
-        self, db_with_svc: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch,
+        self,
+        db_with_svc: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """30d uptime of 99.95% -> half budget used -> ~50% remaining."""
-        _stub_compute_uptime(monkeypatch, {
-            timedelta(minutes=5):  97.0,
-            timedelta(minutes=30): 97.0,
-            timedelta(hours=1):    97.0,
-            timedelta(hours=6):    97.0,
-            timedelta(days=30):    99.95,
-        })
+        _stub_compute_uptime(
+            monkeypatch,
+            {
+                timedelta(minutes=5): 97.0,
+                timedelta(minutes=30): 97.0,
+                timedelta(hours=1): 97.0,
+                timedelta(hours=6): 97.0,
+                timedelta(days=30): 99.95,
+            },
+        )
         breaches = await evaluate_burn_rate(db_with_svc, _SVC, _SVC_NAME, datetime.now(UTC))
         fast = next(b for b in breaches if b.severity == "fast")
         assert abs(fast.error_budget_remaining_pct - 50.0) < 2.0
 
     @pytest.mark.asyncio
     async def test_error_budget_remaining_pct_fully_consumed(
-        self, db_with_svc: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch,
+        self,
+        db_with_svc: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """30d uptime exactly at 99.9% target -> 0% budget remaining."""
-        _stub_compute_uptime(monkeypatch, {
-            timedelta(minutes=5):  97.0,
-            timedelta(minutes=30): 97.0,
-            timedelta(hours=1):    97.0,
-            timedelta(hours=6):    97.0,
-            timedelta(days=30):    99.9,
-        })
+        _stub_compute_uptime(
+            monkeypatch,
+            {
+                timedelta(minutes=5): 97.0,
+                timedelta(minutes=30): 97.0,
+                timedelta(hours=1): 97.0,
+                timedelta(hours=6): 97.0,
+                timedelta(days=30): 99.9,
+            },
+        )
         breaches = await evaluate_burn_rate(db_with_svc, _SVC, _SVC_NAME, datetime.now(UTC))
         fast = next(b for b in breaches if b.severity == "fast")
         assert fast.error_budget_remaining_pct <= 1.0
 
     @pytest.mark.asyncio
     async def test_error_budget_remaining_pct_full_when_no_data(
-        self, db_with_svc: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch,
+        self,
+        db_with_svc: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """30d window with no tracked data (uptime_percent=None) -> 100% remaining."""
-        _stub_compute_uptime(monkeypatch, {
-            timedelta(minutes=5):  97.0,
-            timedelta(minutes=30): 97.0,
-            timedelta(hours=1):    97.0,
-            timedelta(hours=6):    97.0,
-            timedelta(days=30):    None,
-        })
+        _stub_compute_uptime(
+            monkeypatch,
+            {
+                timedelta(minutes=5): 97.0,
+                timedelta(minutes=30): 97.0,
+                timedelta(hours=1): 97.0,
+                timedelta(hours=6): 97.0,
+                timedelta(days=30): None,
+            },
+        )
         breaches = await evaluate_burn_rate(db_with_svc, _SVC, _SVC_NAME, datetime.now(UTC))
         fast = next(b for b in breaches if b.severity == "fast")
         assert fast.error_budget_remaining_pct == 100.0
@@ -417,9 +458,7 @@ class TestRouting:
         )
         await db.commit()
 
-        decision = await route_slo_burn_rate_alert(
-            db, breach, "https://hooks.slack.com/test", now
-        )
+        decision = await route_slo_burn_rate_alert(db, breach, "https://hooks.slack.com/test", now)
 
         assert decision.should_send is False
         assert decision.suppressed_by == "dedup"
@@ -441,9 +480,7 @@ class TestRouting:
         )
         await db.commit()
 
-        decision = await route_slo_burn_rate_alert(
-            db, breach, "https://hooks.slack.com/test", now
-        )
+        decision = await route_slo_burn_rate_alert(db, breach, "https://hooks.slack.com/test", now)
 
         assert decision.should_send is False
         assert decision.suppressed_by == "maintenance_window"
@@ -454,16 +491,17 @@ class TestRouting:
         breach = _make_fast_breach()
         now = datetime.now(UTC)
 
-        decision = await route_slo_burn_rate_alert(
-            db_with_svc, breach, None, now
-        )
+        decision = await route_slo_burn_rate_alert(db_with_svc, breach, None, now)
 
         assert decision.should_send is False
         assert decision.suppressed_by == "webhook_not_configured"
 
     def test_build_dedup_key_format(self):
         """build_slo_burn_rate_dedup_key produces expected format."""
-        assert build_slo_burn_rate_dedup_key("slack_api", "fast") == "slo_burn:slack_api:fast"
+        assert (
+            build_slo_burn_rate_dedup_key("identity-provider", "fast")
+            == "slo_burn:identity-provider:fast"
+        )
         assert build_slo_burn_rate_dedup_key("github", "slow") == "slo_burn:github:slow"
 
 
@@ -481,6 +519,7 @@ class TestRecordAlert:
         dedup_key = build_slo_burn_rate_dedup_key(breach.service_id, breach.severity)
 
         from app.alerting.routing import RoutingDecision
+
         decision = RoutingDecision(
             should_send=True,
             webhook_url="https://hooks.slack.com/test",
@@ -493,9 +532,7 @@ class TestRecordAlert:
         await record_slo_alert(db, breach, decision)
         await db.commit()
 
-        cursor = await db.execute(
-            "SELECT * FROM alert_sent_log WHERE dedup_key = ?", (dedup_key,)
-        )
+        cursor = await db.execute("SELECT * FROM alert_sent_log WHERE dedup_key = ?", (dedup_key,))
         row = await cursor.fetchone()
         assert row is not None
         assert row["alert_kind"] == "slo_burn_rate"
@@ -511,6 +548,7 @@ class TestRecordAlert:
         dedup_key = build_slo_burn_rate_dedup_key(breach.service_id, breach.severity)
 
         from app.alerting.routing import RoutingDecision
+
         decision = RoutingDecision(
             should_send=False,
             webhook_url=None,
@@ -654,7 +692,8 @@ class TestSlackBuilder:
 
         # The mention context block is only appended when channel_mention is truthy
         mention_contexts = [
-            block for block in payload.get("blocks", [])
+            block
+            for block in payload.get("blocks", [])
             if block.get("type") == "context"
             and any("here" in str(e) for e in block.get("elements", []))
         ]
@@ -678,9 +717,7 @@ class TestCycle:
             called.append(True)
             return []
 
-        monkeypatch.setattr(
-            "app.alerting.burn_rate.evaluate_burn_rate", _spy
-        )
+        monkeypatch.setattr("app.alerting.burn_rate.evaluate_burn_rate", _spy)
 
         app_mock = MagicMock()
         await run_slo_burn_rate_cycle(app_mock)
@@ -689,7 +726,9 @@ class TestCycle:
 
     @pytest.mark.asyncio
     async def test_cycle_routes_and_records_for_each_breach(
-        self, db_with_svc: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch,
+        self,
+        db_with_svc: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """Enable flag, stub a fast breach, mock Slack send → alert_sent_log row written."""
         monkeypatch.setattr(settings, "slo_burn_rate_enabled", True)
@@ -711,6 +750,7 @@ class TestCycle:
         # get_db is imported lazily inside run_slo_burn_rate_cycle — patch at source.
         async def _fake_get_db() -> aiosqlite.Connection:
             return db
+
         monkeypatch.setattr("app.database.get_db", _fake_get_db)
 
         # Patch the Slack send hook wherever burn_rate.py imports it from.
@@ -722,6 +762,7 @@ class TestCycle:
             if isinstance(payload, dict):
                 send_calls.append(payload)
             return True
+
         # Try common names; set whichever exists on the module.
         for attr in ("send_slack_alert", "send_slack_webhook", "send_slack"):
             if hasattr(br_module, attr):
@@ -739,7 +780,9 @@ class TestCycle:
 
     @pytest.mark.asyncio
     async def test_cycle_logs_duration_no_error(
-        self, db_with_svc: aiosqlite.Connection, monkeypatch: pytest.MonkeyPatch,
+        self,
+        db_with_svc: aiosqlite.Connection,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """Cycle completes without raising even when no breaches fire."""
         monkeypatch.setattr(settings, "slo_burn_rate_enabled", True)
@@ -749,13 +792,18 @@ class TestCycle:
 
         async def _fake_get_db() -> aiosqlite.Connection:
             return db
+
         monkeypatch.setattr("app.database.get_db", _fake_get_db)
 
         # No breaches so no Slack send path is exercised.
         async def _no_breaches(
-            _db: aiosqlite.Connection, _sid: str, _sname: str, _now: datetime,
+            _db: aiosqlite.Connection,
+            _sid: str,
+            _sname: str,
+            _now: datetime,
         ) -> list[BurnRateBreach]:
             return []
+
         monkeypatch.setattr(br_module, "evaluate_burn_rate", _no_breaches)
 
         app_mock = MagicMock()

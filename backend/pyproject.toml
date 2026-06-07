@@ -1,7 +1,7 @@
 [project]
 name = "it-service-health-dashboard"
 version = "0.1.0"
-description = "Internal dashboard that aggregates SaaS vendor health for Box IT"
+description = "Internal dashboard that aggregates SaaS vendor health for enterprise IT"
 requires-python = ">=3.12"
 # Runtime deps are pinned in requirements.txt for reproducible CI;
 # this file covers tool configs (ruff, mypy, pytest) + packaging metadata.

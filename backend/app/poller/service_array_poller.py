@@ -1,7 +1,8 @@
-"""RingCentral Status API poller.
+"""Service-array status poller.
 
-Fetches service status from status.ringcentral.com/status.json
-which returns an array of 75 service status objects.
+Fetches status from an endpoint that returns an array of per-service
+status objects, each carrying a level field and optional alerts list.
+Overall status is derived from the worst level across all entries.
 """
 
 import logging
@@ -14,7 +15,7 @@ from app.poller.statuspage_poller import PollResult
 
 logger = logging.getLogger(__name__)
 
-# RingCentral level values → our status
+# Level field values → our status
 LEVEL_MAP = {
     "Good": ServiceStatus.OPERATIONAL,
     "Informational": ServiceStatus.OPERATIONAL,
@@ -24,24 +25,24 @@ LEVEL_MAP = {
 }
 
 
-async def poll_ringcentral(
+async def poll_service_array(
     client: httpx.AsyncClient,
     poll_url: str,
 ) -> PollResult:
-    """Poll RingCentral status API.
+    """Poll a service-array status endpoint.
 
-    Returns an array of objects like:
+    The endpoint returns an array of objects like:
     { "category": "Core Services", "service": "Calling - Inbound",
       "region": "Americas", "level": "Good", "alerts": [] }
 
-    We compute overall status from the worst level across all services.
+    Overall status is computed from the worst level across all entries.
     """
     try:
         response = await resilient_fetch(client, poll_url)
         services = response.json()
     except Exception as e:
         detail, reason = describe_fetch_error(e)
-        logger.warning("RingCentral poll failed: %s (%s)", detail, reason)
+        logger.warning("Service-array poll failed: %s (%s)", detail, reason)
         return PollResult(
             status=ServiceStatus.UNKNOWN,
             status_detail=detail,
@@ -49,7 +50,7 @@ async def poll_ringcentral(
         )
 
     if not isinstance(services, list):
-        return PollResult(status=ServiceStatus.OPERATIONAL, page_name="RingCentral")
+        return PollResult(status=ServiceStatus.OPERATIONAL, page_name="Service Array")
 
     # Compute worst status across all services
     worst = ServiceStatus.OPERATIONAL
@@ -79,6 +80,6 @@ async def poll_ringcentral(
     return PollResult(
         status=worst,
         status_detail=worst_detail if worst != ServiceStatus.OPERATIONAL else None,
-        page_name="RingCentral",
+        page_name="Service Array",
         incidents=active_alerts,
     )

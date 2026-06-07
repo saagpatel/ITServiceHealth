@@ -20,18 +20,18 @@ from app.postmortems import render_markdown, write_postmortem
 _BASE_EVENTS = [
     {
         "id": 1,
-        "service_id": "okta",
+        "service_id": "identity-provider",
         "previous_status": "operational",
         "new_status": "degraded",
         "vendor_title": "Elevated error rates",
         "vendor_detail": "Users experiencing login failures",
-        "impact_statement": "Okta is degraded",
+        "impact_statement": "Identity Provider is degraded",
         "source": "statuspage_json",
         "created_at": "2026-04-24T10:00:00Z",
     },
     {
         "id": 2,
-        "service_id": "okta",
+        "service_id": "identity-provider",
         "previous_status": "degraded",
         "new_status": "major_outage",
         "vendor_title": "Complete SSO failure",
@@ -42,12 +42,12 @@ _BASE_EVENTS = [
     },
     {
         "id": 3,
-        "service_id": "okta",
+        "service_id": "identity-provider",
         "previous_status": "major_outage",
         "new_status": "operational",
         "vendor_title": None,
         "vendor_detail": None,
-        "impact_statement": "Okta has recovered",
+        "impact_statement": "Identity Provider has recovered",
         "source": "statuspage_json",
         "created_at": "2026-04-24T11:00:00Z",
     },
@@ -57,17 +57,17 @@ _BASE_EVENTS = [
 def _sample_report(**overrides) -> dict:
     """Return a realistic report dict with all required keys."""
     base = {
-        "service_id": "okta",
-        "service_name": "Okta",
+        "service_id": "identity-provider",
+        "service_name": "Identity Provider",
         "started_at": "2026-04-24T10:00:00Z",
         "resolved_at": "2026-04-24T11:00:00Z",
         "duration_seconds": 3600,
         "duration_human": "1h",
         "peak_severity": "major_outage",
-        "affected_downstream": ["Box Web", "Box Mobile"],
+        "affected_downstream": ["Content Platform Web", "Content Platform Mobile"],
         "event_count": 3,
         "events": list(_BASE_EVENTS),
-        "impact_summary": "Okta experienced major outage for 1h.",
+        "impact_summary": "Identity Provider experienced major outage for 1h.",
     }
     base.update(overrides)
     return base
@@ -92,24 +92,22 @@ class TestRenderMarkdown:
             "## Action Items",
         ]
         positions = [md.index(s) for s in expected_sections]
-        assert positions == sorted(positions), (
-            "Sections are not in the expected order"
-        )
+        assert positions == sorted(positions), "Sections are not in the expected order"
 
     def test_render_auto_fills_summary_with_impact_summary(self):
-        report = _sample_report(impact_summary="Okta was down for exactly 1h.")
+        report = _sample_report(impact_summary="Identity Provider was down for exactly 1h.")
         md = render_markdown(report)
         summary_start = md.index("## Summary")
         impact_start = md.index("## Impact")
         summary_body = md[summary_start:impact_start]
-        assert "Okta was down for exactly 1h." in summary_body
+        assert "Identity Provider was down for exactly 1h." in summary_body
 
     def test_render_impact_lists_peak_severity_duration_count_affected(self):
         report = _sample_report(
             peak_severity="major_outage",
             duration_human="1h",
             event_count=3,
-            affected_downstream=["Box Web", "Box Mobile"],
+            affected_downstream=["Content Platform Web", "Content Platform Mobile"],
         )
         md = render_markdown(report)
         impact_start = md.index("## Impact")
@@ -119,8 +117,8 @@ class TestRenderMarkdown:
         assert "major_outage" in impact_body
         assert "1h" in impact_body
         assert "3" in impact_body
-        assert "Box Web" in impact_body
-        assert "Box Mobile" in impact_body
+        assert "Content Platform Web" in impact_body
+        assert "Content Platform Mobile" in impact_body
 
     def test_render_impact_handles_empty_affected_downstream(self):
         report = _sample_report(affected_downstream=[])
@@ -140,6 +138,7 @@ class TestRenderMarkdown:
         assert len(bullets) == 3
 
         import re
+
         time_pattern = re.compile(r"\d{2}:\d{2}:\d{2} UTC")
         arrow_pattern = re.compile(r"\w+ → \w+")
         for bullet in bullets:
@@ -183,13 +182,17 @@ class TestRenderMarkdown:
         # vendor_detail fallback (no vendor_title)
         event_detail = dict(event_all, vendor_title=None)
         md_detail = render_markdown(_sample_report(events=[event_detail]))
-        body_detail = md_detail[md_detail.index("## Timeline"):md_detail.index("## What Went Well")]
+        body_detail = md_detail[
+            md_detail.index("## Timeline") : md_detail.index("## What Went Well")
+        ]
         assert "the detail" in body_detail
 
         # impact_statement fallback (no vendor_title, no vendor_detail)
         event_impact = dict(event_all, vendor_title=None, vendor_detail=None)
         md_impact = render_markdown(_sample_report(events=[event_impact]))
-        body_impact = md_impact[md_impact.index("## Timeline"):md_impact.index("## What Went Well")]
+        body_impact = md_impact[
+            md_impact.index("## Timeline") : md_impact.index("## What Went Well")
+        ]
         assert "the impact" in body_impact
 
     def test_render_preserves_all_todo_placeholders(self):
@@ -213,31 +216,41 @@ class TestRenderMarkdown:
         fm = yaml.safe_load(frontmatter_text)
         assert isinstance(fm, dict)
         required_keys = {
-            "service", "service_name", "started_at", "resolved_at",
-            "duration", "peak_severity", "affected_downstream",
-            "event_count", "status",
+            "service",
+            "service_name",
+            "started_at",
+            "resolved_at",
+            "duration",
+            "peak_severity",
+            "affected_downstream",
+            "event_count",
+            "status",
         }
         assert required_keys <= fm.keys()
         assert fm["status"] == "draft"
 
     def test_render_frontmatter_escapes_yaml_special_chars(self):
         # Service name with a colon — yaml.safe_dump must quote it properly
-        report = _sample_report(service_name="Okta: identity", service_id="okta-identity")
+        report = _sample_report(
+            service_name="Identity Provider: SSO", service_id="identity-provider-sso"
+        )
         md = render_markdown(report)
         lines = md.splitlines()
         assert lines[0] == "---"
         end_idx = lines.index("---", 1)
         frontmatter_text = "\n".join(lines[1:end_idx])
         fm = yaml.safe_load(frontmatter_text)
-        assert fm["service_name"] == "Okta: identity"
+        assert fm["service_name"] == "Identity Provider: SSO"
 
         # Service name with a leading dash
-        report2 = _sample_report(service_name="- Okta primary", service_id="okta2")
+        report2 = _sample_report(
+            service_name="- Identity Provider primary", service_id="identity-provider2"
+        )
         md2 = render_markdown(report2)
         lines2 = md2.splitlines()
         end_idx2 = lines2.index("---", 1)
         fm2 = yaml.safe_load("\n".join(lines2[1:end_idx2]))
-        assert fm2["service_name"] == "- Okta primary"
+        assert fm2["service_name"] == "- Identity Provider primary"
 
 
 # ---------------------------------------------------------------------------
@@ -257,11 +270,12 @@ class TestWritePostmortem:
         started_at = report["started_at"]
         resolved_at = report["resolved_at"]
         sha = hashlib.sha1(
-            f"{started_at}|{resolved_at}".encode(), usedforsecurity=False,
+            f"{started_at}|{resolved_at}".encode(),
+            usedforsecurity=False,
         ).hexdigest()[:6]
         dt = datetime.fromisoformat(started_at.replace("Z", "+00:00")).astimezone(UTC)
         compact = dt.strftime("%Y%m%dT%H%M%SZ")
-        expected_name = f"okta-{compact}-{sha}.md"
+        expected_name = f"identity-provider-{compact}-{sha}.md"
         assert result.name == expected_name
 
     @pytest.mark.asyncio
@@ -350,7 +364,7 @@ class TestWritePostmortem:
 # ---------------------------------------------------------------------------
 
 
-async def _seed_recovery_scenario(db, write_lock, service_id: str = "okta") -> None:
+async def _seed_recovery_scenario(db, write_lock, service_id: str = "identity-provider") -> None:
     """Seed the DB so generate_incident_report finds a complete incident window.
 
     Inserts a service (current_status=operational) and two status_events
@@ -359,7 +373,7 @@ async def _seed_recovery_scenario(db, write_lock, service_id: str = "okta") -> N
     await db.execute(
         """INSERT OR REPLACE INTO services
                (id, display_name, category, poll_type, current_status)
-               VALUES (?, 'Okta', 'identity', 'statuspage_json', 'operational')""",
+               VALUES (?, 'Identity Provider', 'identity', 'statuspage_json', 'operational')""",
         (service_id,),
     )
     # Event 1: started the incident (operational → degraded, >60s ago)
@@ -381,10 +395,9 @@ async def _seed_recovery_scenario(db, write_lock, service_id: str = "okta") -> N
 
 class TestAlertingEngineIntegration:
     @pytest.mark.asyncio
-    async def test_engine_calls_write_postmortem_when_enabled(
-        self, db, tmp_path, monkeypatch
-    ):
+    async def test_engine_calls_write_postmortem_when_enabled(self, db, tmp_path, monkeypatch):
         from app.config import settings as real_settings
+
         monkeypatch.setattr(real_settings, "postmortems_enabled", True)
         monkeypatch.setattr(real_settings, "postmortems_dir", str(tmp_path))
         # Suppress slack alerting — no webhook configured
@@ -394,11 +407,11 @@ class TestAlertingEngineIntegration:
         monkeypatch.setattr(real_settings, "alert_dedup_window_seconds", 1)
 
         write_lock = asyncio.Lock()
-        await _seed_recovery_scenario(db, write_lock, service_id="okta")
+        await _seed_recovery_scenario(db, write_lock, service_id="identity-provider")
 
         recovery_change = StatusChange(
-            service_id="okta",
-            service_display_name="Okta",
+            service_id="identity-provider",
+            service_display_name="Identity Provider",
             previous_status="degraded",
             new_status="operational",
             status_detail=None,
@@ -408,7 +421,7 @@ class TestAlertingEngineIntegration:
 
         await process_changes(db, write_lock, [recovery_change])
 
-        md_files = list(tmp_path.glob("okta-*.md"))
+        md_files = list(tmp_path.glob("identity-provider-*.md"))
         assert len(md_files) == 1, f"Expected 1 postmortem file, found: {md_files}"
 
     @pytest.mark.asyncio
@@ -416,6 +429,7 @@ class TestAlertingEngineIntegration:
         self, db, tmp_path, monkeypatch
     ):
         from app.config import settings as real_settings
+
         monkeypatch.setattr(real_settings, "postmortems_enabled", False)
         monkeypatch.setattr(real_settings, "postmortems_dir", str(tmp_path))
         monkeypatch.setattr(real_settings, "slack_webhook_url", None)
@@ -423,11 +437,11 @@ class TestAlertingEngineIntegration:
         monkeypatch.setattr(real_settings, "alert_dedup_window_seconds", 1)
 
         write_lock = asyncio.Lock()
-        await _seed_recovery_scenario(db, write_lock, service_id="okta")
+        await _seed_recovery_scenario(db, write_lock, service_id="identity-provider")
 
         recovery_change = StatusChange(
-            service_id="okta",
-            service_display_name="Okta",
+            service_id="identity-provider",
+            service_display_name="Identity Provider",
             previous_status="degraded",
             new_status="operational",
             status_detail=None,
@@ -462,11 +476,11 @@ class TestAlertingEngineIntegration:
         monkeypatch.setattr(pm_module, "write_postmortem", _failing_write)
 
         write_lock = asyncio.Lock()
-        await _seed_recovery_scenario(db, write_lock, service_id="okta")
+        await _seed_recovery_scenario(db, write_lock, service_id="identity-provider")
 
         recovery_change = StatusChange(
-            service_id="okta",
-            service_display_name="Okta",
+            service_id="identity-provider",
+            service_display_name="Identity Provider",
             previous_status="degraded",
             new_status="operational",
             status_detail=None,

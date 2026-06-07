@@ -1,6 +1,22 @@
-# IT Service Health Dashboard — Service Registry
-# All poll_urls verified via curl on 2026-04-07
-# Services with no public JSON API are set to poll_type: manual
+# IT Service Health Dashboard — Service Registry (EXAMPLE)
+#
+# This is a generic, public example registry. It monitors well-known public
+# developer-tool status pages so the dashboard works immediately for a demo.
+#
+# For a real deployment, copy this file to `services.local.yaml` (gitignored)
+# and replace these entries with your own organization's services. The loader
+# prefers `services.local.yaml` when present, so your real registry never has
+# to live in version control.
+#
+# Schema per entry:
+#   id:           stable slug, referenced by dependencies.yaml and the API
+#   display_name: human-facing name shown in the UI
+#   category:     one of identity|productivity|collaboration|engineering|hr|
+#                 finance|sales|marketing|networking|support|other
+#   poll_type:    statuspage_json | manual | (see app/seed.py for the full set)
+#   poll_url:     required unless poll_type is manual
+#   status_page_url: human-facing status page link
+#   tier:         critical | important | informational (default: important)
 
 categories:
   identity: "Identity & Access"
@@ -16,194 +32,82 @@ categories:
 
 services:
   # ── Identity & Access ─────────────────────────────────────────────
-  - id: okta
-    display_name: Okta
+  # The SSO / identity broker. Point SSO_BROKER_SERVICE_ID at this id to
+  # enable the dedicated identity-provider impact wording. Many SSO vendors
+  # gate their status API, so this is modeled as a manual-update service.
+  - id: identity-provider
+    display_name: Identity Provider (SSO)
     category: identity
-    poll_type: manual  # status.okta.com returns 401 — requires Salesforce login, no public API
-    status_page_url: https://status.okta.com
-    tier: critical  # SSO broker — outage blocks access to almost every app
-
-  - id: duo
-    display_name: Duo Security
-    category: identity
-    poll_type: statuspage_json
-    poll_url: https://status.duo.com/api/v2/summary.json
-    status_page_url: https://status.duo.com
-    tier: critical  # MFA — outage blocks every new login
-
-  # ── Productivity ──────────────────────────────────────────────────
-  - id: box
-    display_name: Box
-    category: productivity
-    poll_type: statuspage_json
-    poll_url: https://status.box.com/api/v2/summary.json
-    status_page_url: https://status.box.com
-
-  - id: docusign
-    display_name: DocuSign
-    category: productivity
-    poll_type: statuspage_json
-    poll_url: https://status.docusign.com/api/v2/summary.json
-    status_page_url: https://status.docusign.com
-
-  - id: google-mail
-    display_name: Google Mail
-    category: productivity
-    poll_type: google_json
-    poll_url: https://www.google.com/appsstatus/dashboard/incidents.json
-    status_page_url: https://www.google.com/appsstatus/dashboard
-
-  - id: google-calendar
-    display_name: Google Calendar
-    category: productivity
-    poll_type: google_json
-    poll_url: https://www.google.com/appsstatus/dashboard/incidents.json
-    status_page_url: https://www.google.com/appsstatus/dashboard
-
-  - id: conga
-    display_name: Conga
-    category: productivity
-    poll_type: statuspage_json
-    poll_url: https://status.conga.com/api/v2/summary.json
-    status_page_url: https://status.conga.com
-
-  - id: eptura
-    display_name: Eptura (Teem)
-    category: productivity
-    poll_type: statuspage_json
-    poll_url: https://status.eptura.com/api/v2/summary.json
-    status_page_url: https://status.eptura.com
-
-  # ── Collaboration ─────────────────────────────────────────────────
-  - id: slack
-    display_name: Slack
-    category: collaboration
-    poll_type: slack_api
-    poll_url: https://slack-status.com/api/v2.0.0/current
-    status_page_url: https://status.slack.com
-    tier: critical  # Primary async comms — outage halts incident response itself
-
-  - id: zoom
-    display_name: Zoom
-    category: collaboration
-    poll_type: statuspage_json
-    poll_url: https://status.zoom.us/api/v2/summary.json  # returns 302 — httpx needs follow_redirects=True
-    status_page_url: https://status.zoom.us
-
-  - id: ringcentral
-    display_name: RingCentral
-    category: collaboration
-    poll_type: ringcentral_api
-    poll_url: https://status.ringcentral.com/status.json
-    status_page_url: https://status.ringcentral.com
+    poll_type: manual
+    status_page_url: https://example.com/status
+    tier: critical  # SSO broker — an outage blocks login to everything downstream
 
   # ── Engineering ───────────────────────────────────────────────────
-  - id: confluence
-    display_name: Confluence
-    category: engineering
-    poll_type: statuspage_json  # page-level status — components hidden when healthy
-    poll_url: https://status.atlassian.com/api/v2/summary.json
-    statuspage_component_name: Confluence
-    status_page_url: https://status.atlassian.com
-
-  - id: jira
-    display_name: Jira
-    category: engineering
-    poll_type: statuspage_json  # page-level status — components hidden when healthy
-    poll_url: https://status.atlassian.com/api/v2/summary.json
-    statuspage_component_name: Jira
-    status_page_url: https://status.atlassian.com
-
-  - id: servicedesk
-    display_name: Jira Service Management
-    category: engineering
-    poll_type: statuspage_json  # page-level status — components hidden when healthy
-    poll_url: https://status.atlassian.com/api/v2/summary.json
-    statuspage_component_name: Jira Service Management
-    status_page_url: https://status.atlassian.com
-
-  - id: snaplogic
-    display_name: SnapLogic
+  - id: github
+    display_name: GitHub
     category: engineering
     poll_type: statuspage_json
-    poll_url: https://trust.snaplogic.com/api/v2/summary.json  # corrected: trust.snaplogic.com, not status.snaplogic.com
-    status_page_url: https://trust.snaplogic.com
+    poll_url: https://www.githubstatus.com/api/v2/summary.json
+    status_page_url: https://www.githubstatus.com
+    tier: important
 
-  # ── HR & People ──────────────────────────────────────────────────
-  - id: greenhouse
-    display_name: Greenhouse
-    category: hr
+  - id: npm
+    display_name: npm
+    category: engineering
     poll_type: statuspage_json
-    poll_url: https://status.greenhouse.io/api/v2/summary.json
-    status_page_url: https://status.greenhouse.io
+    poll_url: https://status.npmjs.org/api/v2/summary.json
+    status_page_url: https://status.npmjs.org
 
-  - id: workday
-    display_name: Workday
-    category: hr
-    poll_type: manual  # trust site requires Workday Community login — no public API
-    status_page_url: https://community.workday.com/trust/status
-
-  - id: cornerstone
-    display_name: Cornerstone OnDemand
-    category: hr
+  - id: pypi
+    display_name: PyPI
+    category: engineering
     poll_type: statuspage_json
-    poll_url: https://status.csod.com/api/v2/summary.json
-    status_page_url: https://status.csod.com
+    poll_url: https://status.python.org/api/v2/summary.json
+    status_page_url: https://status.python.org
 
-  # ── Finance ──────────────────────────────────────────────────────
-  - id: concur
-    display_name: SAP Concur
-    category: finance
-    poll_type: manual  # open.concur.com is a React SPA — no JSON API
-    status_page_url: https://open.concur.com
-
-  - id: coupa
-    display_name: Coupa
-    category: finance
-    poll_type: manual
-    status_page_url: null
-
-  - id: netsuite
-    display_name: NetSuite
-    category: finance
+  - id: sentry
+    display_name: Sentry
+    category: engineering
     poll_type: statuspage_json
-    poll_url: https://status.netsuite.com/api/v2/summary.json
-    status_page_url: https://status.netsuite.com
+    poll_url: https://status.sentry.io/api/v2/summary.json
+    status_page_url: https://status.sentry.io
 
-  - id: zuora
-    display_name: Zuora
-    category: finance
+  # ── Productivity ──────────────────────────────────────────────────
+  - id: dropbox
+    display_name: Dropbox
+    category: productivity
     poll_type: statuspage_json
-    poll_url: https://trust.zuora.com/api/v2/summary.json  # corrected: trust.zuora.com, not status.zuora.com
-    status_page_url: https://trust.zuora.com
+    poll_url: https://status.dropbox.com/api/v2/summary.json
+    status_page_url: https://status.dropbox.com
 
-  # ── Sales & CRM ─────────────────────────────────────────────────
-  - id: salesforce
-    display_name: Salesforce
-    category: sales
-    poll_type: salesforce_trust
-    poll_url: https://api.status.salesforce.com/v1/incidents
-    status_page_url: https://status.salesforce.com
-
-  # ── Marketing ────────────────────────────────────────────────────
-  - id: iterable
-    display_name: Iterable
-    category: marketing
+  # ── Collaboration ─────────────────────────────────────────────────
+  - id: discord
+    display_name: Discord
+    category: collaboration
     poll_type: statuspage_json
-    poll_url: https://status.iterable.com/api/v2/summary.json
-    status_page_url: https://status.iterable.com
+    poll_url: https://discordstatus.com/api/v2/summary.json
+    status_page_url: https://discordstatus.com
+    tier: critical  # primary async comms in this example deployment
 
-  - id: marketo
-    display_name: Marketo (Adobe)
-    category: marketing
-    poll_type: manual  # status.adobe.com requires Adobe I/O credentials — no public API
-    status_page_url: https://status.adobe.com
+  # ── Networking ────────────────────────────────────────────────────
+  - id: cloudflare
+    display_name: Cloudflare
+    category: networking
+    poll_type: statuspage_json
+    poll_url: https://www.cloudflarestatus.com/api/v2/summary.json
+    status_page_url: https://www.cloudflarestatus.com
 
-  # ── Support ──────────────────────────────────────────────────────
-  - id: zendesk
-    display_name: Zendesk
+  # ── Other ─────────────────────────────────────────────────────────
+  - id: datadog
+    display_name: Datadog
+    category: other
+    poll_type: statuspage_json
+    poll_url: https://status.datadoghq.com/api/v2/summary.json
+    status_page_url: https://status.datadoghq.com
+
+  # ── Support ───────────────────────────────────────────────────────
+  - id: ticketing
+    display_name: Ticketing / ITSM
     category: support
-    poll_type: zendesk_api
-    poll_url: https://status.zendesk.com/api/incidents/active
-    status_page_url: https://status.zendesk.com
-
+    poll_type: manual
+    status_page_url: https://example.com/status

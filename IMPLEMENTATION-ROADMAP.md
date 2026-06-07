@@ -12,8 +12,8 @@
 ```
 [Vendor Status Pages]
     ├── Statuspage.io JSON API (/api/v2/summary.json) — ~20 services
-    ├── Google Workspace JSON feed + RSS — 2 services (Gmail, Calendar)
-    ├── Slack Status API (slack-status.com/api/v2.0.0/current) — 1 service
+    ├── A cloud productivity suite JSON feed + RSS — 2 services (Mail, Calendar)
+    ├── the chat-platform status API (chat-status.example.com/api/v2.0.0/current) — 1 service
     └── Manual updates via POST /api/admin/status — ~10 services
               ↓ (async poll every 60s via APScheduler)
        [Polling Workers]
@@ -24,7 +24,7 @@
               ↓ (on change)
        ┌──────────────────────┐
        │  [Template Engine]   │ — generate impact statements from dependency graph
-       │  [Slack Alerter]     │ — POST Block Kit message to #service-validation webhook
+       │  [Slack Alerter]     │ — POST Block Kit message to the ops-alert channel webhook
        │  [SQLite Writer]     │ — insert status_events row, update services row
        └──────────────────────┘
               ↓
@@ -53,8 +53,8 @@ it-service-health/
 │   │   │   ├── __init__.py
 │   │   │   ├── scheduler.py       # APScheduler async setup, 60s interval, error handling
 │   │   │   ├── statuspage_poller.py  # Statuspage.io JSON API poller (handles ~20 services)
-│   │   │   ├── google_poller.py   # Google Workspace status poller (JSON feed + RSS)
-│   │   │   ├── slack_poller.py    # Slack Status API poller (slack-status.com)
+│   │   │   ├── product_feed_poller.py   # Cloud productivity suite status poller (JSON feed + RSS)
+│   │   │   ├── current_status_poller.py    # Chat-platform status API poller
 │   │   │   ├── rss_poller.py      # Fallback RSS/Atom poller for services without JSON API
 │   │   │   ├── normalizer.py      # Vendor status string → ServiceStatus enum mapping
 │   │   │   └── change_detector.py # Diff current vs stored state, emit change events
@@ -117,10 +117,10 @@ it-service-health/
 ```sql
 -- Service registry: static + current state for each monitored service
 CREATE TABLE services (
-    id TEXT PRIMARY KEY,                            -- slug: "okta", "google-mail", "slack"
-    display_name TEXT NOT NULL,                     -- "Okta", "Google Mail", "Slack"
+    id TEXT PRIMARY KEY,                            -- slug: "identity-provider", "cloud-mail", "chat-platform"
+    display_name TEXT NOT NULL,                     -- "Identity Provider", "Cloud Mail", "Chat Platform"
     category TEXT NOT NULL,                         -- see categories below
-    poll_type TEXT NOT NULL DEFAULT 'manual',       -- "statuspage_json", "google_json", "slack_api", "rss", "manual"
+    poll_type TEXT NOT NULL DEFAULT 'manual',       -- "statuspage_json", "product_feed_json", "current_status_api", "rss", "manual"
     poll_url TEXT,                                  -- API/feed URL to poll (NULL if manual)
     statuspage_component_name TEXT,                 -- for statuspage_json: match this component name in API response
     status_page_url TEXT,                           -- vendor public status page URL for linking
@@ -140,7 +140,7 @@ CREATE TABLE status_events (
     vendor_title TEXT,                              -- incident title from vendor
     vendor_detail TEXT,                             -- incident description/body from vendor
     impact_statement TEXT,                          -- generated template-based impact text
-    source TEXT NOT NULL DEFAULT 'statuspage_json', -- "statuspage_json", "google_json", "slack_api", "rss", "manual"
+    source TEXT NOT NULL DEFAULT 'statuspage_json', -- "statuspage_json", "product_feed_json", "current_status_api", "rss", "manual"
     vendor_incident_id TEXT,                        -- vendor's incident ID for deduplication
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -201,33 +201,33 @@ These vendors use Atlassian Statuspage. Poll their `/api/v2/summary.json` endpoi
 
 | Service | Status Page Base URL | summary.json URL | Component to Match | Category |
 |---------|---------------------|-------------------|--------------------|----------|
-| Box | status.box.com | `https://status.box.com/api/v2/summary.json` | Match overall page status or relevant component | productivity |
-| Okta | status.okta.com | `https://status.okta.com/api/v2/summary.json` | Use page-level status (Okta has cell-specific pages; use main) | identity |
-| Duo | status.duo.com | `https://status.duo.com/api/v2/summary.json` | "Duo Security" or page-level | identity |
-| DocuSign | status.docusign.com | `https://status.docusign.com/api/v2/summary.json` | Page-level or "eSignature" component | productivity |
-| Zoom | status.zoom.us | `https://status.zoom.us/api/v2/summary.json` | "Zoom Meetings", "Zoom Phone", or page-level | collaboration |
-| Concur | open.concur.com (verify) | `https://open.concur.com/api/v2/summary.json` | Page-level | finance |
-| Conga | (verify Statuspage URL) | Verify at runtime — may use custom domain | Page-level | productivity |
-| SnapLogic | status.snaplogic.com | `https://status.snaplogic.com/api/v2/summary.json` | Page-level | engineering |
-| Zuora | status.zuora.com | `https://status.zuora.com/api/v2/summary.json` | Page-level | finance |
-| Cornerstone | status.csod.com (verify) | Verify at runtime | Page-level | hr |
-| Iterable | status.iterable.com | `https://status.iterable.com/api/v2/summary.json` | Page-level | marketing |
-| Marketo | status.adobe.com (verify) | Verify — Marketo may be under Adobe's status page | "Marketo Engage" component | marketing |
-| Greenhouse | status.greenhouse.io (verify) | Verify at runtime | Page-level | hr |
-| Teem (iOFFICE) | (verify) | Verify — Teem was acquired by iOFFICE | Page-level | productivity |
-| Salesforce | status.salesforce.com | `https://status.salesforce.com/api/v2/summary.json` | Page-level or instance-specific | sales |
-| Zendesk | status.zendesk.com | `https://status.zendesk.com/api/v2/summary.json` | Page-level | support |
+| Content platform | (vendor status domain — verify at runtime) | `https://<vendor-status-domain>/api/v2/summary.json` | Match overall page status or relevant component | productivity |
+| Identity provider (SSO) | (vendor status domain — verify at runtime) | `https://<vendor-status-domain>/api/v2/summary.json` | Use page-level status (vendor has cell-specific pages; use main) | identity |
+| MFA | (vendor status domain — verify at runtime) | `https://<vendor-status-domain>/api/v2/summary.json` | "MFA Security" or page-level | identity |
+| E-signature tool | (vendor status domain — verify at runtime) | `https://<vendor-status-domain>/api/v2/summary.json` | Page-level or "eSignature" component | productivity |
+| Video conferencing | (vendor status domain — verify at runtime) | `https://<vendor-status-domain>/api/v2/summary.json` | "Meetings", "Phone", or page-level | collaboration |
+| Finance tools (expense) | (vendor status domain — verify at runtime) | `https://<vendor-status-domain>/api/v2/summary.json` | Page-level | finance |
+| Document automation | (verify Statuspage URL) | Verify at runtime — may use custom domain | Page-level | productivity |
+| Integration platform | (vendor status domain — verify at runtime) | `https://<vendor-status-domain>/api/v2/summary.json` | Page-level | engineering |
+| Finance tools (billing) | (vendor status domain — verify at runtime) | `https://<vendor-status-domain>/api/v2/summary.json` | Page-level | finance |
+| HR tools (LMS) | (vendor status domain — verify at runtime) | Verify at runtime | Page-level | hr |
+| Marketing tools (email) | (vendor status domain — verify at runtime) | `https://<vendor-status-domain>/api/v2/summary.json` | Page-level | marketing |
+| Marketing tools (automation) | (vendor status domain — verify at runtime) | Verify — may be under a parent vendor's status page | "Marketing Automation" component | marketing |
+| HR tools (ATS) | (vendor status domain — verify at runtime) | Verify at runtime | Page-level | hr |
+| Space management | (verify) | Verify — may have been acquired | Page-level | productivity |
+| CRM | (vendor status domain — verify at runtime) | `https://<vendor-status-domain>/api/v2/summary.json` | Page-level or instance-specific | sales |
+| Support platform | (vendor status domain — verify at runtime) | `https://<vendor-status-domain>/api/v2/summary.json` | Page-level | support |
 
-**IMPORTANT: Claude Code must verify every URL during Phase 0 by running `curl <url>` and confirming valid JSON is returned. Some URLs may have changed or use custom Statuspage domains. If a URL fails, search for `<vendor> status page` and find the correct Statuspage.io URL, then check if `/api/v2/summary.json` is accessible.**
+**IMPORTANT: Claude Code must verify every URL during Phase 0 by running `curl <url>` and confirming valid JSON is returned. Some URLs may have changed or use custom Statuspage domains. If a URL fails, search for the vendor's status page and find the correct Statuspage.io URL, then check if `/api/v2/summary.json` is accessible.**
 
-### Poll Type: `slack_api`
-Slack has its own dedicated status API, not Statuspage.
+### Poll Type: `current_status_api`
+Some collaboration vendors expose a dedicated current-status API, not Statuspage.
 
 | Service | API URL | Category |
 |---------|---------|----------|
-| Slack | `https://slack-status.com/api/v2.0.0/current` | collaboration |
+| Chat platform | `https://chat-status.example.com/api/v2.0.0/current` | collaboration |
 
-**Slack Status API response shape:**
+**Current-status API response shape:**
 ```json
 {
   "status": "ok|active",
@@ -241,7 +241,7 @@ Slack has its own dedicated status API, not Statuspage.
       "title": "Some customers may experience...",
       "type": "incident|notice|maintenance",
       "status": "active|resolved",
-      "url": "https://status.slack.com/2024-01/...",
+      "url": "https://status.example.com/2024-01/...",
       "services": ["Login/SSO", "Messaging", "Connections", ...],
       "notes": [{ "date_created": "...", "body": "..." }]
     }
@@ -250,55 +250,55 @@ Slack has its own dedicated status API, not Statuspage.
 ```
 When `status` is `"ok"` and `active_incidents` is empty → operational. Otherwise map by incident type/impact.
 
-### Poll Type: `google_json`
-Google Workspace uses its own status dashboard with a JSON feed and RSS.
+### Poll Type: `product_feed_json`
+A cloud productivity suite uses its own status dashboard with a JSON feed and RSS.
 
 | Service | JSON URL | RSS URL | Category |
 |---------|----------|---------|----------|
-| Google Mail | `https://www.google.com/appsstatus/dashboard/incidents.json` | `https://www.google.com/appsstatus/rss/en` | productivity |
-| Google Calendar | (same JSON feed — filter by product) | (same RSS feed) | productivity |
+| Cloud Mail | `https://feed.example.com/incidents.json` | `https://feed.example.com/rss` | productivity |
+| Cloud Calendar | (same JSON feed — filter by product) | (same RSS feed) | productivity |
 
-**Google Workspace JSON feed:** Contains incidents for ALL Google Workspace products. Filter by `service_name` field matching "Gmail" or "Google Calendar". The feed provides `most_recent_update.status` which maps to severity. RSS feed at `https://www.google.com/appsstatus/rss/en` is a fallback.
+**Cloud productivity suite JSON feed:** Contains incidents for ALL products in the suite. Filter by `service_name` field matching the relevant products. The feed provides `most_recent_update.status` which maps to severity. RSS feed at `https://feed.example.com/rss` is a fallback.
 
-**Note:** Google's JSON feed returns incident *history*, not a real-time component status like Statuspage. For current status: if no active (non-resolved) incidents exist for the product → operational. If active incidents exist → map severity.
+**Note:** The cloud productivity suite's JSON feed returns incident *history*, not a real-time component status like Statuspage. For current status: if no active (non-resolved) incidents exist for the product → operational. If active incidents exist → map severity.
 
 ### Poll Type: `rss`
 Fallback for any service that has an RSS/Atom feed but not a known JSON API.
 
 | Service | Feed URL | Category |
 |---------|----------|----------|
-| RingCentral | (find RSS URL from status page) | collaboration |
+| Telephony | (find RSS URL from status page) | collaboration |
 
 ### Poll Type: `manual`
 These services have no automated monitoring feeds. IT engineers update status via `curl POST`.
 
 | Service | Status Page URL (for linking) | Category |
 |---------|-------------------------------|----------|
-| Confluence | status.atlassian.com (has JSON API — consider upgrading to statuspage_json) | engineering |
-| Jira | status.atlassian.com (same — consider statuspage_json with component filter) | engineering |
-| ServiceDesk (JSM) | status.atlassian.com (same) | engineering |
-| Coupa | (no known status page) | finance |
-| Juniper VPN | (no public status page) | networking |
-| Lithium | (no known status page) | other |
-| Netsuite | (verify — Oracle may have a status page) | finance |
-| Workday | (verify — Workday has a trust site) | hr |
-| Partnerportal | (Salesforce instance — use Salesforce status) | sales |
+| Team wiki | status.atlassian.com (has JSON API — consider upgrading to statuspage_json) | engineering |
+| Ticketing / ITSM system | status.atlassian.com (same — consider statuspage_json with component filter) | engineering |
+| ServiceDesk | status.atlassian.com (same) | engineering |
+| Finance tools (procurement) | (no known status page) | finance |
+| VPN | (no public status page) | networking |
+| Community platform | (no known status page) | other |
+| Finance tools (ERP) | (verify — vendor may have a status page) | finance |
+| HR system | (verify — vendor has a trust site) | hr |
+| Partner portal | (CRM instance — use CRM status) | sales |
 
-**NOTE: Confluence, Jira, and ServiceDesk are all Atlassian products. Atlassian has a Statuspage.io-based status page at `https://status.atlassian.com/api/v2/summary.json`. Claude Code should verify this API and if accessible, upgrade these from `manual` to `statuspage_json` with appropriate component name filters. This would reduce manual services from ~10 to ~7.**
+**NOTE: The team wiki, ticketing / ITSM system, and ServiceDesk are all products from the same vendor (Atlassian). Atlassian has a Statuspage.io-based status page at `https://status.atlassian.com/api/v2/summary.json`. Claude Code should verify this API and if accessible, upgrade these from `manual` to `statuspage_json` with appropriate component name filters. This would reduce manual services from ~10 to ~7.**
 
 ### Service Categories
 ```yaml
 categories:
-  identity: "Identity & Access"        # Okta, Duo
-  productivity: "Productivity"          # Box, DocuSign, Google Mail, Google Calendar, Teem, Conga
-  collaboration: "Collaboration"        # Slack, Zoom, RingCentral
-  engineering: "Engineering"            # Jira, Confluence, ServiceDesk, SnapLogic
-  hr: "HR & People"                     # Greenhouse, Workday, Cornerstone
-  finance: "Finance"                    # Concur, Coupa, Netsuite, Zuora
-  sales: "Sales & CRM"                 # Salesforce, Partnerportal
-  marketing: "Marketing"               # Iterable, Marketo
-  networking: "Network & VPN"           # Juniper VPN
-  support: "Support"                    # Zendesk
+  identity: "Identity & Access"        # identity provider (SSO), MFA
+  productivity: "Productivity"          # content platform, e-signature, cloud mail, cloud calendar, space management, document automation
+  collaboration: "Collaboration"        # chat platform, video conferencing, telephony
+  engineering: "Engineering"            # ticketing / ITSM system, team wiki, ServiceDesk, integration platform
+  hr: "HR & People"                     # HR tools (ATS), HR system, HR tools (LMS)
+  finance: "Finance"                    # finance tools (expense), finance tools (procurement), finance tools (ERP), finance tools (billing)
+  sales: "Sales & CRM"                 # CRM, partner portal
+  marketing: "Marketing"               # marketing tools (email), marketing tools (automation)
+  networking: "Network & VPN"           # VPN
+  support: "Support"                    # support platform
 ```
 
 ---
@@ -338,9 +338,9 @@ STATUSPAGE_INDICATOR_MAP = {
 }
 ```
 
-### Slack Status API Mapping
+### Current-status API mapping
 ```python
-def normalize_slack_status(response: dict) -> ServiceStatus:
+def normalize_current_status(response: dict) -> ServiceStatus:
     if response["status"] == "ok" and not response.get("active_incidents"):
         return ServiceStatus.OPERATIONAL
     incidents = response.get("active_incidents", [])
@@ -353,9 +353,9 @@ def normalize_slack_status(response: dict) -> ServiceStatus:
     return ServiceStatus.DEGRADED  # default if active but unknown type
 ```
 
-### Google Workspace Mapping
+### Product-feed mapping
 ```python
-# Google incidents have severity levels in updates
+# Cloud productivity suite incidents have severity levels in updates
 # If no active incident for the product → OPERATIONAL
 # If active incident exists → DEGRADED (default), escalate based on description keywords
 ```
@@ -378,69 +378,69 @@ RSS_TITLE_KEYWORDS = {
 # Format: upstream → downstream (when upstream breaks, downstream is impacted)
 dependencies:
   # Identity & Access — highest blast radius
-  okta:
-    - service: box
-      impact: "Box SSO login unavailable"
+  identity-provider:
+    - service: content-platform
+      impact: "Content platform SSO login unavailable"
       severity: critical
-    - service: slack
-      impact: "Slack SSO login may fail for new sessions"
+    - service: chat-platform
+      impact: "Chat platform SSO login may fail for new sessions"
       severity: critical
-    - service: zoom
-      impact: "Zoom SSO login unavailable"
+    - service: video-conferencing
+      impact: "Video conferencing SSO login unavailable"
       severity: critical
-    - service: salesforce
-      impact: "Salesforce SSO login unavailable"
+    - service: crm
+      impact: "CRM SSO login unavailable"
       severity: critical
-    - service: jira
-      impact: "Jira SSO login unavailable"
+    - service: itsm
+      impact: "Ticketing / ITSM system SSO login unavailable"
       severity: high
-    - service: confluence
-      impact: "Confluence SSO login unavailable"
+    - service: team-wiki
+      impact: "Team wiki SSO login unavailable"
       severity: high
-    - service: concur
-      impact: "Concur SSO login unavailable"
+    - service: finance-expense
+      impact: "Finance tools (expense) SSO login unavailable"
       severity: high
-    - service: workday
-      impact: "Workday SSO login unavailable"
+    - service: hr-system
+      impact: "HR system SSO login unavailable"
       severity: high
-    - service: greenhouse
-      impact: "Greenhouse SSO login unavailable"
+    - service: hr-ats
+      impact: "HR tools (ATS) SSO login unavailable"
       severity: medium
-    - service: docusign
-      impact: "DocuSign SSO login unavailable"
+    - service: esignature
+      impact: "E-signature tool SSO login unavailable"
       severity: medium
-    - service: zendesk
-      impact: "Zendesk SSO login unavailable"
+    - service: support-platform
+      impact: "Support platform SSO login unavailable"
       severity: medium
-    - service: netsuite
-      impact: "NetSuite SSO login unavailable"
+    - service: finance-erp
+      impact: "Finance tools (ERP) SSO login unavailable"
       severity: medium
 
-  duo:
-    - service: okta
-      impact: "MFA push notifications unavailable; Okta login may require fallback methods"
+  mfa:
+    - service: identity-provider
+      impact: "MFA push notifications unavailable; identity provider login may require fallback methods"
       severity: critical
 
   # Collaboration dependencies
-  slack:
+  chat-platform:
     - service: servicedesk
-      impact: "Slack-based IT support channel and Aisera bot unavailable"
+      impact: "Chat-based IT support channel and bot unavailable"
       severity: high
 
-  # Google Workspace
-  google-mail:
-    - service: google-calendar
+  # Cloud productivity suite
+  cloud-mail:
+    - service: cloud-calendar
       impact: "Calendar notifications and email invites may be delayed"
       severity: medium
 
   # Sales & CRM
-  salesforce:
-    - service: partnerportal
-      impact: "Partner Portal is hosted on Salesforce — full outage expected"
+  crm:
+    - service: partner-portal
+      impact: "Partner Portal is hosted on the CRM — full outage expected"
       severity: critical
 
   # Network
-  juniper-vpn:
+  vpn:
     - service: all_internal
       impact: "VPN outage affects remote access to all internal services"
       severity: critical
@@ -467,17 +467,17 @@ TEMPLATES = {
     "with_downstream": (
         " This may impact: {downstream_list}."
     ),
-    "okta_degraded": (
-        "Okta is reporting degraded performance. SSO authentication "
+    "sso_degraded": (
+        "The identity provider (SSO) is reporting degraded performance. SSO authentication "
         "for all SaaS applications may be affected. Impacted services: {downstream_list}."
     ),
-    "okta_outage": (
-        "⚠️ Okta is experiencing an outage. SSO authentication is unavailable. "
+    "sso_outage": (
+        "⚠️ The identity provider (SSO) is experiencing an outage. SSO authentication is unavailable. "
         "Users cannot log into: {downstream_list}. "
         "Advise users with active sessions to avoid logging out."
     ),
     "vpn_outage": (
-        "⚠️ VPN (Juniper) is experiencing an outage. "
+        "⚠️ VPN is experiencing an outage. "
         "Remote users cannot access internal services. "
         "On-site users are not affected."
     ),
@@ -493,7 +493,7 @@ TEMPLATES = {
 
 ## Slack Alert Format (Block Kit)
 
-Alerts posted to #service-validation use Slack Block Kit for rich formatting:
+Alerts posted to the ops-alert channel use Slack Block Kit for rich formatting:
 
 ```python
 def build_slack_alert(service_name: str, old_status: str, new_status: str,
@@ -702,14 +702,14 @@ npm install -D tailwindcss @tailwindcss/vite
 **In scope (v1 demo):**
 - Unified status board for all ~30 services
 - Statuspage.io JSON API polling for ~20 services
-- Slack Status API polling
-- Google Workspace JSON/RSS polling
+- Chat-platform status API polling
+- Cloud productivity suite JSON/RSS polling
 - Manual status update API for remaining services
 - Service dependency graph with impact statement templates
 - Timeline view of recent status changes
 - Situation banner with template-generated summary
 - Scheduled maintenance tracking and display
-- Slack Block Kit alerts to #service-validation on status changes
+- Slack Block Kit alerts to the ops-alert channel on status changes
 - Auto-refresh dashboard (30s polling)
 - Service categorization and grouped display
 - "Last updated" indicator showing poll freshness
@@ -739,7 +739,7 @@ npm install -D tailwindcss @tailwindcss/vite
 - **Slack webhook URL:** env var `SLACK_WEBHOOK_URL` — never in git
 - **All vendor status APIs:** public, no auth
 - **No user data collected:** dashboard is read-only, no PII
-- **Network boundary:** Mac Mini on corporate network, VPN-only access
+- **Network boundary:** Mac Mini on the internal network, internal-network-only access
 - **SQLite:** local file on Mac Mini, not exposed
 - `.env` file in `.gitignore`, `.env.example` committed as template
 
@@ -758,7 +758,7 @@ npm install -D tailwindcss @tailwindcss/vite
 5. Create `config/services.yaml` with all ~30 services — **Acceptance:** File contains every service from the catalog above. For each statuspage_json service, the `poll_url` has been verified by running `curl <url>` and confirming valid JSON response. Services with unverified URLs are noted with comments.
 6. Create `config/dependencies.yaml` — **Acceptance:** Contains the full dependency graph from this roadmap
 7. Implement YAML loader + DB seeder — **Acceptance:** Run seeder → `SELECT count(*) FROM services` returns correct count (≥28)
-8. Implement `statuspage_poller.py` — poll ONE service (Okta) via `https://status.okta.com/api/v2/summary.json` — **Acceptance:** Returns parsed status, prints component statuses to console
+8. Implement `statuspage_poller.py` — poll ONE service (identity provider) via its Statuspage.io summary URL — **Acceptance:** Returns parsed status, prints component statuses to console
 9. Implement `normalizer.py` with all mapping tables — **Acceptance:** `pytest tests/test_normalizer.py` passes with tests for every vendor mapping
 
 **Verification checklist:**
@@ -767,11 +767,11 @@ npm install -D tailwindcss @tailwindcss/vite
 - [ ] `sqlite3 data.db "SELECT count(*) FROM services"` → ≥28
 - [ ] `sqlite3 data.db "SELECT id, poll_type FROM services WHERE poll_type='statuspage_json'"` → ~16-20 rows
 - [ ] `pytest tests/test_normalizer.py` → all pass
-- [ ] Manual test: `python -c "import asyncio; from app.poller.statuspage_poller import poll_service; asyncio.run(poll_service('okta'))"` → prints Okta status
+- [ ] Manual test: `python -c "import asyncio; from app.poller.statuspage_poller import poll_service; asyncio.run(poll_service('identity-provider'))"` → prints identity provider status
 
 **Risks:**
 - Some Statuspage.io URLs may have changed or use custom domains → **Mitigation:** Phase 0 Task 5 explicitly requires verifying each URL. Document any failures and fall back to RSS or manual.
-- Google's JSON feed URL may not be publicly documented and could change → **Mitigation:** Fall back to RSS at `https://www.google.com/appsstatus/rss/en`
+- The cloud productivity suite JSON feed URL may not be publicly documented and could change → **Mitigation:** Fall back to RSS at `https://feed.example.com/rss`
 
 ---
 
@@ -782,14 +782,14 @@ npm install -D tailwindcss @tailwindcss/vite
 **Tasks:**
 
 1. Extend `statuspage_poller.py` to handle ALL statuspage_json services in a single poll cycle — **Acceptance:** One async function iterates `services.yaml`, polls each statuspage_json service, handles errors per-service (one failure doesn't stop others)
-2. Implement `slack_poller.py` for Slack Status API — **Acceptance:** Polls `https://slack-status.com/api/v2.0.0/current`, normalizes response to ServiceStatus
-3. Implement `google_poller.py` for Google Workspace — **Acceptance:** Fetches Google JSON/RSS feed, filters for Gmail and Calendar, returns per-product status
+2. Implement `current_status_poller.py` for the chat-platform status API — **Acceptance:** Polls `https://chat-status.example.com/api/v2.0.0/current`, normalizes response to ServiceStatus
+3. Implement `product_feed_poller.py` for the cloud productivity suite — **Acceptance:** Fetches JSON/RSS feed, filters for Cloud Mail and Cloud Calendar, returns per-product status
 4. Implement `change_detector.py` — **Acceptance:** Compares poll result against `services.current_status` in DB; on change: inserts `status_events` row, updates `services` row, returns list of changes
-5. Implement `dependencies/graph.py` — **Acceptance:** `test_dependencies.py` passes; `get_downstream("okta")` returns all SSO-dependent services with impact descriptions
-6. Implement `alerting/templates.py` — **Acceptance:** `test_templates.py` passes; generates correct impact statements for Okta outage, VPN outage, generic service degradation
-7. Implement `alerting/slack.py` with Block Kit formatting — **Acceptance:** Trigger a test change → message appears in #service-validation with header, status fields, impact text, and button linking to vendor status page
+5. Implement `dependencies/graph.py` — **Acceptance:** `test_dependencies.py` passes; `get_downstream("identity-provider")` returns all SSO-dependent services with impact descriptions
+6. Implement `alerting/templates.py` — **Acceptance:** `test_templates.py` passes; generates correct impact statements for identity provider outage, VPN outage, generic service degradation
+7. Implement `alerting/slack.py` with Block Kit formatting — **Acceptance:** Trigger a test change → message appears in the ops-alert channel with header, status fields, impact text, and button linking to vendor status page
 8. Implement `scheduler.py` tying it all together — **Acceptance:** On app startup, scheduler begins 60s poll cycle. Logs show all services polled. No unhandled exceptions.
-9. Implement `router_admin.py` POST `/api/admin/status` — **Acceptance:** `curl -X POST localhost:8000/api/admin/status -H 'Content-Type: application/json' -d '{"service_id":"workday","new_status":"degraded","detail":"Slow response times"}'` → returns updated service, creates status_event, triggers Slack alert
+9. Implement `router_admin.py` POST `/api/admin/status` — **Acceptance:** `curl -X POST localhost:8000/api/admin/status -H 'Content-Type: application/json' -d '{"service_id":"hr-system","new_status":"degraded","detail":"Slow response times"}'` → returns updated service, creates status_event, triggers Slack alert
 10. Implement all GET API endpoints (services, timeline, summary, maintenance) — **Acceptance:** Each returns correct JSON matching the Pydantic response models
 
 **Verification checklist:**
@@ -797,7 +797,7 @@ npm install -D tailwindcss @tailwindcss/vite
 - [ ] `curl localhost:8000/api/timeline` → events (test with manual status change if no real incidents)
 - [ ] `curl localhost:8000/api/summary` → correct counts, active incidents list, maintenance list
 - [ ] `curl localhost:8000/api/maintenance` → upcoming maintenances from Statuspage.io
-- [ ] POST a degraded status manually → Slack Block Kit message appears in #service-validation within 5 seconds
+- [ ] POST a degraded status manually → Slack Block Kit message appears in the ops-alert channel within 5 seconds
 - [ ] Wait 2 minutes → see at least 2 poll cycles in logs, no errors
 - [ ] `pytest tests/` → all tests pass
 
@@ -852,15 +852,15 @@ npm install -D tailwindcss @tailwindcss/vite
 2. Configure FastAPI to serve static frontend — **Acceptance:** Mount `dist/` as static files at `/`; `curl localhost:8000/` returns `index.html`
 3. Create `scripts/seed_demo_data.py` — **Acceptance:** Seeds 5-7 historical incidents over the past 7 days across different services with realistic timestamps, status progressions (investigating → identified → monitoring → resolved), and impact statements. Timeline view looks populated, not empty.
 4. Create `.env.example` — **Acceptance:** Contains `SLACK_WEBHOOK_URL=`, `DATABASE_PATH=./data.db`, `POLL_INTERVAL_SECONDS=60`, `HOST=0.0.0.0`, `PORT=8000`
-5. Create `com.box.it-health-dashboard.plist` launchd service file — **Acceptance:** Starts on boot, restarts on crash, logs to `/var/log/it-health-dashboard.log`
-6. Deploy to Mac Mini — **Acceptance:** Clone repo, install deps, configure `.env`, load launchd plist, verify `curl <mac-mini-ip>:8000/api/health` from another machine on VPN
-7. Open macOS firewall for port 8000 — **Acceptance:** Dashboard accessible from another laptop on VPN
-8. End-to-end smoke test — **Acceptance:** From a different machine: load dashboard, see live statuses, verify at least 16+ services show non-"unknown" statuses, trigger manual status change, see Slack alert + dashboard update within 60s
+5. Create `com.company.it-health-dashboard.plist` launchd service file — **Acceptance:** Starts on boot, restarts on crash, logs to `/var/log/it-health-dashboard.log`
+6. Deploy to Mac Mini — **Acceptance:** Clone repo, install deps, configure `.env`, load launchd plist, verify `curl <host>:8000/api/health` from another machine on the internal network
+7. Open macOS firewall for port 8000 — **Acceptance:** Dashboard accessible from another laptop on the internal network
+8. End-to-end smoke test — **Acceptance:** From a different machine on the internal network: load dashboard, see live statuses, verify at least 16+ services show non-"unknown" statuses, trigger manual status change, see Slack alert + dashboard update within 60s
 9. Write `README.md` — **Acceptance:** Contains: project overview, architecture diagram (text), how to access (URL), what it shows, how to manually update services (curl examples), environment setup instructions, what's planned next (v2 features)
-10. Prepare demo script — **Acceptance:** 2-3 talking points for Mark: (a) show live dashboard with real statuses, (b) trigger a simulated incident and show Slack alert + dashboard update, (c) click a service to show dependency mapping
+10. Prepare demo script — **Acceptance:** 2-3 talking points: (a) show live dashboard with real statuses, (b) trigger a simulated incident and show Slack alert + dashboard update, (c) click a service to show dependency mapping
 
 **Verification checklist:**
-- [ ] From another laptop on VPN: `http://<mac-mini-ip>:8000` → dashboard loads
+- [ ] From another laptop on the internal network: `http://<host>:8000` → dashboard loads
 - [ ] ≥16 services show live statuses (not all "unknown")
 - [ ] Manual-only services show "unknown" or manually-set statuses
 - [ ] Timeline shows seeded + any real events
@@ -870,7 +870,7 @@ npm install -D tailwindcss @tailwindcss/vite
 
 **Risks:**
 - Mac Mini firewall blocking inbound → **Mitigation:** Run `sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add /usr/local/bin/python3` or disable firewall for port 8000 specifically. Test from another machine early in Phase 3.
-- DNS/hostname on VPN → **Mitigation:** Use raw IP for demo; request DNS alias from network team if project continues
+- DNS/hostname on the internal network → **Mitigation:** Use raw IP for demo; request DNS alias from network team if project continues
 - stale data after Mac Mini sleep → **Mitigation:** Disable sleep in System Preferences → Energy Saver. Verify poll cycle resumes after network reconnect.
 
 ---
@@ -884,11 +884,11 @@ npm install -D tailwindcss @tailwindcss/vite
 
 **v3 — Internal Signal Correlation (Weeks 5-8):**
 - Splunk integration: pull auth failure logs, network errors, app-specific events
-- JSM ticket correlation: count open tickets mentioning affected service names
-- Dashboard enrichment: "Okta degraded + 47 SSO tickets in last 30min + Splunk showing auth failures"
+- ITSM ticket correlation: count open tickets mentioning affected service names
+- Dashboard enrichment: "Identity provider (SSO) degraded + 47 SSO tickets in last 30min + Splunk showing auth failures"
 
 **v4 — Proactive Detection + Slack Bot (Weeks 9-12):**
 - ThousandEyes + Datadog integration for network and APM signals
 - Anomaly detection: alert when ticket volume spikes before vendor status page updates
-- Slack bot: `@it-agent what's going on with Okta?` → returns correlated intelligence
+- Slack bot: `@it-agent what's going on with the identity provider?` → returns correlated intelligence
 - GitHub change correlation: "These 3 config changes were deployed in the last hour"

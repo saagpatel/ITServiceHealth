@@ -43,12 +43,12 @@ Only needed if you want to show Claude Design a specific live state it can't der
    curl -X POST http://localhost:8000/api/admin/status \
      -H "Authorization: Bearer $ADMIN_API_TOKEN" \
      -H 'Content-Type: application/json' \
-     -d '{"service_id":"okta","new_status":"major_outage","reason":"screenshot"}'
+     -d '{"service_id":"identity-provider","new_status":"major_outage","reason":"screenshot"}'
    ```
    Revert:
    ```bash
    curl -X POST http://localhost:8000/api/admin/status \
      -H "Authorization: Bearer $ADMIN_API_TOKEN" \
      -H 'Content-Type: application/json' \
-     -d '{"service_id":"okta","new_status":"operational","reason":"revert"}'
+     -d '{"service_id":"identity-provider","new_status":"operational","reason":"revert"}'
    ```

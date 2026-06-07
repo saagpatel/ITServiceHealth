@@ -83,6 +83,13 @@ class Settings(BaseSettings):
     # changes state, emit one aggregated alert instead of one per dependent.
     dependency_correlation_threshold: int = Field(default=3, gt=0, le=100)
 
+    # The service id that acts as the SSO / identity broker. When a service
+    # with this id changes state, impact statements use the dedicated SSO
+    # template (an identity-provider outage blocks login to everything
+    # downstream). Leave unset to disable the special case — e.g. set
+    # SSO_BROKER_SERVICE_ID=<your-identity-provider-id> in the environment.
+    sso_broker_service_id: str | None = None
+
     # Observability (Phase 3)
     # Pretty console output in dev, JSON in prod. JSON is cheap to parse
     # and preserves contextvars (poll_cycle_id etc.) as first-class fields.
@@ -148,12 +155,21 @@ class Settings(BaseSettings):
         return str(self.healthcheck_ping_url) if self.healthcheck_ping_url else None
 
     @property
+    def _config_dir(self) -> Path:
+        return Path(__file__).parent.parent / "config"
+
+    @property
     def services_yaml_path(self) -> Path:
-        return Path(__file__).parent.parent / "config" / "services.yaml"
+        # Prefer a gitignored services.local.yaml (the operator's real
+        # registry) when present; otherwise fall back to the committed
+        # generic example.
+        local = self._config_dir / "services.local.yaml"
+        return local if local.exists() else self._config_dir / "services.yaml"
 
     @property
     def dependencies_yaml_path(self) -> Path:
-        return Path(__file__).parent.parent / "config" / "dependencies.yaml"
+        local = self._config_dir / "dependencies.local.yaml"
+        return local if local.exists() else self._config_dir / "dependencies.yaml"
 
     @property
     def migrations_dir(self) -> Path:

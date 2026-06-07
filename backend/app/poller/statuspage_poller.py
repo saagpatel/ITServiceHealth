@@ -158,14 +158,16 @@ async def poll_all_statuspage(
             detail, reason = describe_fetch_error(data_or_error)
             logger.warning("Failed to fetch %s: %s (%s)", url, detail, reason)
             for svc in svcs:
-                results.append((
-                    svc["id"],
-                    PollResult(
-                        status=ServiceStatus.UNKNOWN,
-                        status_detail=detail,
-                        poll_failure_reason=reason,
-                    ),
-                ))
+                results.append(
+                    (
+                        svc["id"],
+                        PollResult(
+                            status=ServiceStatus.UNKNOWN,
+                            status_detail=detail,
+                            poll_failure_reason=reason,
+                        ),
+                    )
+                )
         else:
             data = data_or_error
             for svc in svcs:
@@ -183,7 +185,7 @@ async def _demo_poll() -> None:
     ) as client:
         result = await poll_statuspage(
             client,
-            "https://status.box.com/api/v2/summary.json",
+            "https://status.example.com/api/v2/summary.json",
         )
         print(f"Page: {result.page_name}")
         print(f"Status: {result.status.value}")
@@ -202,4 +204,5 @@ async def _demo_poll() -> None:
 
 if __name__ == "__main__":
     import asyncio as _asyncio
+
     _asyncio.run(_demo_poll())

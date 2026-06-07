@@ -2,7 +2,7 @@
 
 ## What Pulse is
 
-An internal status dashboard that aggregates real-time health of ~30 SaaS services used by Box IT (Okta, Slack, Google Workspace, Salesforce, Zoom, RingCentral, Jira, etc.). Polls vendor status endpoints every 60 seconds, detects state changes, fires Slack alerts, renders a unified board with timeline + dependency graph + SLA history. Served from a Mac Mini behind corporate VPN at `http://<mini>:8000`.
+An internal status dashboard that aggregates real-time health of ~30 SaaS services used by Enterprise IT (identity, collaboration, productivity, CRM, video, telephony, and ITSM tools). Polls vendor status endpoints every 60 seconds, detects state changes, fires Slack alerts, renders a unified board with timeline + dependency graph + SLA history. Served from a Mac Mini on the internal network at `http://<host>:8000`.
 
 ## Who uses it
 
@@ -14,10 +14,10 @@ An internal status dashboard that aggregates real-time health of ~30 SaaS servic
 
 ## Primary jobs-to-be-done
 
-1. **"Is Okta down?"** — a sub-5-second glance that answers the single most common question the IT helpdesk gets asked.
+1. **"Is the identity provider down?"** — a sub-5-second glance that answers the single most common question the IT helpdesk gets asked.
 2. **"What's the blast radius?"** — if something is degraded, what depends on it? (Dependency graph + impact statements.)
 3. **"Has this been flapping?"** — the backend's flap-suppression state machine is visible; operators need to see "we've seen 2 bad polls in a row, one more and we'll fire."
-4. **"What's our 30-day uptime on Workday?"** — for leadership reporting + vendor renewal conversations.
+4. **"What's our 30-day uptime on the HR system?"** — for leadership reporting + vendor renewal conversations.
 5. **"Who acknowledged the Slack alert?"** — once the ack flow is live, the dashboard should reflect that someone owns it.
 
 ## Design direction
@@ -91,7 +91,7 @@ Claude Design should produce proposals for each:
 ## Tech constraints for the handoff
 
 - **React 19 + Vite + Tailwind 4** — Tailwind is v4 syntax (`@theme`, not `tailwind.config.js`). Handoff CSS variables map cleanly to `@theme` tokens.
-- **IBM Plex via `@fontsource`** self-hosted — no CDN fonts (deploy is VPN-only). If the new typography is a commercial/Google font, we need a self-hostable equivalent or a Fontsource package.
+- **IBM Plex via `@fontsource`** self-hosted — no CDN fonts (deploy is internal-network-only). If the new typography is a commercial/Google font, we need a self-hostable equivalent or a Fontsource package.
 - **Lucide icons** — easy to keep or swap.
 - **`recharts`** for SLA trend — any chart restyling should fit inside recharts' props, not require migration.
 - **No new component framework** — we're not adopting shadcn/ui or MUI just for this refresh. Tailwind + plain React components only.

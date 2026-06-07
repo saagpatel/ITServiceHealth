@@ -4,10 +4,10 @@
   IT Service Health Dashboard — launchd daemon (Phase 6 hardened).
 
   Install:
-    cp com.box.it-health-dashboard.plist \
-       /Library/LaunchDaemons/com.box.it-health-dashboard.plist
+    cp com.company.it-health-dashboard.plist \
+       /Library/LaunchDaemons/com.company.it-health-dashboard.plist
     # Edit the /path/to/ placeholders below first.
-    sudo launchctl bootstrap system /Library/LaunchDaemons/com.box.it-health-dashboard.plist
+    sudo launchctl bootstrap system /Library/LaunchDaemons/com.company.it-health-dashboard.plist
 
   Key hardening decisions (see PRODUCTION-ROADMAP.md Phase 6):
     - KeepAlive is dict-form: restart on crash, NOT on clean exit.
@@ -23,7 +23,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.box.it-health-dashboard</string>
+    <string>com.company.it-health-dashboard</string>
 
     <key>ProgramArguments</key>
     <array>

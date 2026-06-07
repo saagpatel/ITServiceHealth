@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Litestream sidecar launchd plist — copy to
-  /Library/LaunchDaemons/com.box.it-health-dashboard-litestream.plist,
+  /Library/LaunchDaemons/com.company.it-health-dashboard-litestream.plist,
   fill in the paths, then:
 
-    sudo launchctl bootstrap system /Library/LaunchDaemons/com.box.it-health-dashboard-litestream.plist
+    sudo launchctl bootstrap system /Library/LaunchDaemons/com.company.it-health-dashboard-litestream.plist
 
   This daemon runs alongside the main app; it continuously streams WAL
   frames from data.db to whichever replicas litestream.yml names.
@@ -21,7 +21,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.box.it-health-dashboard-litestream</string>
+    <string>com.company.it-health-dashboard-litestream</string>
 
     <key>ProgramArguments</key>
     <array>

@@ -14,12 +14,12 @@
 #   sudo caddy validate --config /opt/it-health/deploy/Caddyfile
 #   sudo caddy run --config /opt/it-health/deploy/Caddyfile     # or via brew services
 #
-# For production: set up a com.box.it-health-caddy.plist daemon
+# For production: set up a com.company.it-health-caddy.plist daemon
 # mirroring the Litestream sidecar plist in this directory.
 
 {
     # Global options
-    email ops@box.example             # ACME registration — change to your ops alias
+    email ops@example.com             # ACME registration — change to your ops alias
     admin off                         # don't expose the Caddy admin API
 }
 
@@ -27,7 +27,7 @@
 # Using `tls internal` issues a cert from Caddy's local CA, which your
 # clients will need to trust. For a publicly-routable host, swap for a
 # real domain and ACME handles cert issuance automatically.
-health.box.corp {
+health.example.internal {
     tls internal
 
     # Hardening — keep these even for VPN-internal deploys. Attackers
@@ -78,7 +78,7 @@ health.box.corp {
         health_status   2xx
     }
 
-    # Structured access log — JSON so it ships into whatever Box uses.
+    # Structured access log — JSON so it ships into whatever log aggregator you use.
     log {
         output file /var/log/it-health/caddy-access.log {
             roll_size 10mb

@@ -1,7 +1,7 @@
 """Poll scheduler: runs all pollers on a 60-second cycle via APScheduler.
 
-Orchestrates statuspage, Slack, and Google pollers, feeds results through
-the change detector, and logs status changes.
+Orchestrates all poller types, feeds results through the change detector,
+and logs status changes.
 
 Phase 3 observability hooks:
   - Each poll cycle binds a fresh `poll_cycle_id` contextvar so every
@@ -50,12 +50,15 @@ def _on_scheduler_event(event) -> None:
     """Bridge APScheduler events into our logs + metrics."""
     if event.code == EVENT_JOB_ERROR:
         logger.error(
-            "APScheduler job %s raised: %s", event.job_id, event.exception,
+            "APScheduler job %s raised: %s",
+            event.job_id,
+            event.exception,
         )
     elif event.code == EVENT_JOB_MISSED:
         logger.warning(
             "APScheduler job %s missed its run time at %s",
-            event.job_id, event.scheduled_run_time,
+            event.job_id,
+            event.scheduled_run_time,
         )
 
 
@@ -97,6 +100,7 @@ def start_scheduler(app) -> None:
     # WAL checkpoint — runs more often than retention so the -wal sidecar
     # file doesn't grow without bound between weekly retention passes.
     from app.retention import scheduled_retention_tick, scheduled_wal_checkpoint_tick
+
     scheduler.add_job(
         scheduled_wal_checkpoint_tick,
         "interval",
@@ -119,6 +123,7 @@ def start_scheduler(app) -> None:
     # as a belt-and-suspenders snapshot for operators who don't want to
     # set up Litestream's continuous WAL shipping.
     from app.backup import run_backup
+
     scheduler.add_job(
         run_backup,
         "cron",
@@ -133,6 +138,7 @@ def start_scheduler(app) -> None:
     # SLO burn-rate alerting — gated by feature flag (default off)
     if settings.slo_burn_rate_enabled:
         from app.alerting.burn_rate import run_slo_burn_rate_cycle
+
         scheduler.add_job(
             run_slo_burn_rate_cycle,
             "interval",
@@ -198,21 +204,23 @@ async def run_poll_cycle(app) -> None:
             services_by_type.setdefault(svc["poll_type"], []).append(svc)
 
         # Dispatch all poller groups concurrently
-        from app.poller.google_poller import poll_google
-        from app.poller.ringcentral_poller import poll_ringcentral
-        from app.poller.salesforce_poller import poll_salesforce
-        from app.poller.slack_poller import poll_slack
+        from app.poller.active_incidents_poller import poll_active_incidents
+        from app.poller.current_status_poller import poll_current_status
+        from app.poller.product_feed_poller import poll_product_feed
+        from app.poller.service_array_poller import poll_service_array
         from app.poller.statuspage_poller import poll_all_statuspage
-        from app.poller.zendesk_poller import poll_zendesk
+        from app.poller.trust_incidents_poller import poll_trust_incidents
 
         tasks = []
         task_labels = []
 
         def _timed(poll_type: str, coro):
             """Wrap a poller coroutine to record its wall-clock duration."""
+
             async def _runner():
                 with POLL_DURATION_SECONDS.labels(poll_type=poll_type).time():
                     return await coro
+
             return _runner()
 
         statuspage_svcs = services_by_type.get("statuspage_json", [])
@@ -220,33 +228,37 @@ async def run_poll_cycle(app) -> None:
             tasks.append(_timed("statuspage_json", poll_all_statuspage(client, statuspage_svcs)))
             task_labels.append(f"statuspage ({len(statuspage_svcs)} services)")
 
-        slack_svcs = services_by_type.get("slack_api", [])
-        if slack_svcs:
-            svc = slack_svcs[0]
+        current_status_svcs = services_by_type.get("current_status_api", [])
+        if current_status_svcs:
+            svc = current_status_svcs[0]
 
-            async def _poll_slack():
-                result = await poll_slack(client, svc["poll_url"])
+            async def _poll_current_status():
+                result = await poll_current_status(client, svc["poll_url"])
                 return [(svc["id"], result)]
 
-            tasks.append(_timed("slack_api", _poll_slack()))
-            task_labels.append("slack (1 service)")
+            tasks.append(_timed("current_status_api", _poll_current_status()))
+            task_labels.append("current_status (1 service)")
 
-        google_svcs = services_by_type.get("google_json", [])
-        if google_svcs:
-            url = google_svcs[0]["poll_url"]
-            tasks.append(_timed("google_json", poll_google(client, url, google_svcs)))
-            task_labels.append(f"google ({len(google_svcs)} services)")
+        product_feed_svcs = services_by_type.get("product_feed_json", [])
+        if product_feed_svcs:
+            url = product_feed_svcs[0]["poll_url"]
+            tasks.append(
+                _timed("product_feed_json", poll_product_feed(client, url, product_feed_svcs))
+            )
+            task_labels.append(f"product_feed ({len(product_feed_svcs)} services)")
 
         # Single-service custom pollers
         for poll_type, poller_fn in [
-            ("salesforce_trust", poll_salesforce),
-            ("zendesk_api", poll_zendesk),
-            ("ringcentral_api", poll_ringcentral),
+            ("trust_incidents_api", poll_trust_incidents),
+            ("active_incidents_api", poll_active_incidents),
+            ("service_array_json", poll_service_array),
         ]:
             for svc in services_by_type.get(poll_type, []):
+
                 async def _poll_single(s=svc, fn=poller_fn):
                     result = await fn(client, s["poll_url"])
                     return [(s["id"], result)]
+
                 tasks.append(_timed(poll_type, _poll_single()))
                 task_labels.append(f"{poll_type} ({svc['id']})")
 
@@ -274,20 +286,25 @@ async def run_poll_cycle(app) -> None:
         # Process vendor-outage changes: impact statements + Slack alerts
         if changes:
             from app.alerting.engine import process_changes
+
             await process_changes(db, write_lock, changes, http_client=client)
 
         # Process poller-health changes: alert on the separate poller-health
         # webhook so operators can tell "we're blind" from "vendor is down".
         if health_changes:
             from app.alerting.engine import process_poller_health_changes
+
             await process_poller_health_changes(
-                health_changes, http_client=client,
+                health_changes,
+                http_client=client,
             )
 
         # Log summary
         logger.info(
             "Poll cycle complete: %d services polled, %d changes, %d health",
-            len(all_results), len(changes), len(health_changes),
+            len(all_results),
+            len(changes),
+            len(health_changes),
         )
         for change in changes:
             logger.info(

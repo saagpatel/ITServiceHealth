@@ -35,3 +35,10 @@ frontend/dist/
 # OS
 .DS_Store
 CLAUDE.md.bak
+
+# Local (private) service registry — overrides the committed example so the
+# real organization inventory never has to live in version control.
+backend/config/*.local.yaml
+
+# uv lockfile (runtime deps are pinned in backend/requirements.txt)
+backend/uv.lock

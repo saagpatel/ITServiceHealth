@@ -1,4 +1,4 @@
-"""Normalize vendor-specific status strings to our unified 5-state enum."""
+"""Normalize poll-format status strings to our unified 5-state enum."""
 
 import logging
 from enum import StrEnum
@@ -55,16 +55,18 @@ def normalize_statuspage_indicator(indicator: str) -> ServiceStatus:
     mapped = STATUSPAGE_INDICATOR_MAP.get(key)
     if mapped is None:
         logger.warning(
-            "Unmapped Statuspage indicator %r — returning UNKNOWN.", indicator,
+            "Unmapped Statuspage indicator %r — returning UNKNOWN.",
+            indicator,
         )
         return ServiceStatus.UNKNOWN
     return mapped
 
 
-# ── Slack Status API ───────────────────────────────────────────────
+# ── Current Status API ────────────────────────────────────────────
 
-def normalize_slack_status(response: dict) -> ServiceStatus:
-    """Map Slack Status API response to ServiceStatus.
+
+def normalize_current_status(response: dict) -> ServiceStatus:
+    """Map a current-status API dict response to ServiceStatus.
 
     When status is "ok" and no active incidents → OPERATIONAL.
     Otherwise, map by incident type.
@@ -108,23 +110,24 @@ def normalize_slack_status(response: dict) -> ServiceStatus:
     return ServiceStatus.DEGRADED
 
 
-# ── Google Workspace ───────────────────────────────────────────────
+# ── Product Feed ───────────────────────────────────────────────────
 
-# Google product name mappings for filtering the incident feed
-GOOGLE_PRODUCT_NAMES: dict[str, list[str]] = {
-    "google-mail": ["Gmail", "Google Mail"],
-    "google-calendar": ["Google Calendar"],
+# Maps a service id to the product-title strings that identify it in a
+# multi-product status feed. Populate per your feed adapter's payload.
+PRODUCT_FEED_NAMES: dict[str, list[str]] = {
+    "feed-product-a": ["Product A", "Service A"],
+    "feed-product-b": ["Product B"],
 }
 
 
-def normalize_google_status(incidents: list[dict], service_id: str) -> ServiceStatus:
-    """Map Google Workspace incident feed to ServiceStatus for a specific product.
+def normalize_product_feed_status(incidents: list[dict], service_id: str) -> ServiceStatus:
+    """Map a multi-product incident feed to ServiceStatus for a specific product.
 
-    The incidents.json feed contains incidents for ALL Google Workspace products.
-    Filter by matching product names for the given service_id.
+    The feed contains incidents for all products; filter by matching product
+    names for the given service_id.
     If no active (non-resolved) incidents exist for the product → OPERATIONAL.
     """
-    product_names = GOOGLE_PRODUCT_NAMES.get(service_id, [])
+    product_names = PRODUCT_FEED_NAMES.get(service_id, [])
     if not product_names:
         return ServiceStatus.UNKNOWN
 
@@ -165,16 +168,27 @@ def normalize_google_status(incidents: list[dict], service_id: str) -> ServiceSt
 
 RSS_SEVERITY_KEYWORDS: dict[ServiceStatus, list[str]] = {
     ServiceStatus.MAJOR_OUTAGE: [
-        "major outage", "service outage", "completely unavailable",
+        "major outage",
+        "service outage",
+        "completely unavailable",
     ],
     ServiceStatus.PARTIAL_OUTAGE: [
-        "partial outage", "partial disruption", "some users",
+        "partial outage",
+        "partial disruption",
+        "some users",
     ],
     ServiceStatus.DEGRADED: [
-        "degraded", "performance issue", "intermittent", "delays", "investigating",
+        "degraded",
+        "performance issue",
+        "intermittent",
+        "delays",
+        "investigating",
     ],
     ServiceStatus.OPERATIONAL: [
-        "resolved", "operational", "recovered", "fix implemented",
+        "resolved",
+        "operational",
+        "recovered",
+        "fix implemented",
     ],
 }
 

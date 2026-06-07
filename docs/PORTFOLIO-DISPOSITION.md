@@ -2,7 +2,7 @@
 
 **Status:** Active (self-hosted service) — Python + FastAPI + SQLite
 + React production IT-service status monitoring dashboard for ~30
-SaaS services used by Box IT on `origin/main`. **v1 (demo-ready)
+SaaS services used by Enterprise IT on `origin/main`. **v1 (demo-ready)
 SHIPPED. v2 (production-ready) SHIPPED through Phase 6 + most of
 Phase 7. 356 tests passing.** Active Phase 7 cadence in flight
 (postmortem automation, SLO views, multi-burn-rate alerting,
@@ -57,15 +57,15 @@ Only `origin` (`saagpatel/ITServiceHealth`). Clean migration state.
 
 IT Service Health Dashboard is a Python + FastAPI + SQLite + React
 real-time status monitoring dashboard for **~30 SaaS services used
-by Box IT** (the operator's employer). The pipeline: **async pollers
+in an enterprise IT environment** (the operator's employer). The pipeline: **async pollers
 hit vendor status APIs every 60 seconds** (Statuspage.io for 15
-services, Slack Status API for 1, Google Workspace JSON feed for 2,
+services, chat-platform Status API for 1, cloud-productivity-suite JSON feed for 2,
 manual `POST /api/admin/status` for the remaining 11) → **status
 normalizer** maps to 5-state enum (operational / degraded / partial /
 major / unknown) → **change detector** diffs against SQLite, writes
 status_events → **impact statement engine** uses a dependency
 graph + templates to generate human-readable impact → **Slack
-alerter** posts Block Kit messages to `#service-validation` →
+alerter** posts Block Kit messages to the ops-alert channel →
 **FastAPI REST** + **React dashboard** auto-refreshes every 30
 seconds. **v1 fully shipped (demo-ready). v2 fully shipped through
 Phase 6 (production-ready). Phase 7 actively in flight** (postmortem
@@ -86,7 +86,7 @@ extends:
 
 | Aspect | RedditSentimentAnalyzer | **ITServiceHealth** |
 |---|---|---|
-| Audience | Operator-personal | **Operator's employer (Box IT)** |
+| Audience | Operator-personal | **Operator's employer (enterprise IT)** |
 | Reachability | launchd + nginx | **launchd + Caddy + Cloudflare Tunnel (planned)** |
 | Secrets | Standard | **macOS Keychain** |
 | Observability | Basic | **structlog + Prometheus `/metrics` + Sentry + Healthchecks.io dead-man's switch** |
@@ -136,7 +136,7 @@ Operational concerns:
    multi-burn-rate alerting all shipped; remainder is operator-
    cadence demand-driven.
 3. **Vendor status API breakage monitoring** — Statuspage.io and
-   Slack Status API are stable but Google Workspace JSON feed has
+   the chat-platform Status API are stable but the cloud productivity suite JSON feed has
    changed format historically; observability via
    Healthchecks.io dead-man's switch catches silent breakage.
 4. **Litestream snapshot verification** — daily `VACUUM INTO`
@@ -157,7 +157,7 @@ internally.
 | Aspect | Posture |
 |---|---|
 | Portfolio status | `Active (self-hosted service, corporate-context)` |
-| Audience | **Box IT** (operator's employer) |
+| Audience | **Enterprise IT** (operator's employer) |
 | Distribution model | **Self-hosted on operator infrastructure** (launchd + Caddy + Cloudflare Tunnel) |
 | Review cadence | Active — Phase 7 polish + Phase 2B gating + operational maintenance |
 | Resurface conditions | (a) Phase 2B webhook gating decision, (b) vendor API breakage, (c) macOS update breaks launchd or Caddy, (d) Keychain secret rotation cadence, (e) v3 scope packet |
@@ -179,8 +179,8 @@ internally.
 5. Verify launchd plist + Caddy config still functional.
 6. Verify Healthchecks.io dead-man's switch is being pinged.
 7. Check Litestream stream + most recent daily snapshot.
-8. Verify vendor status API integrations (Statuspage / Slack /
-   Google Workspace) are still parsing correctly.
+8. Verify vendor status API integrations (Statuspage / chat platform /
+   cloud productivity suite) are still parsing correctly.
 
 ---
 
@@ -193,8 +193,8 @@ internally.
 | Default branch | `main` |
 | Build system | Python + FastAPI + SQLite + React + Caddy reverse proxy + launchd + macOS Keychain |
 | Service count | ~30 SaaS services monitored |
-| Test count | **276 tests passing** |
-| Audience | **Box IT (operator's employer)** — corporate-context self-hosted |
+| Test count | **356 tests passing** |
+| Audience | **Enterprise IT (operator's employer)** — corporate-context self-hosted |
 | Phases shipped | v1 demo-ready + v2 production-ready Phases 0-6 + Phase 7 items 1-4 (postmortems + SLO views + multi-burn-rate alerting + /itstatus slash command) |
 | Observability stack | structlog + Prometheus `/metrics` + Sentry + Healthchecks.io dead-man's switch |
 | Data lifecycle | Litestream streaming + daily `VACUUM INTO` snapshot |

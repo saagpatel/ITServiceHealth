@@ -333,7 +333,7 @@
     <dl class="meta">
       <div><dt>Role</dt><dd>Platform engineering · solo</dd></div>
       <div><dt>Stack</dt><dd>Python 3.12 · FastAPI · SQLite · React 19 · Tailwind 4</dd></div>
-      <div><dt>Status</dt><dd>v2 shipped · 276 tests passing</dd></div>
+      <div><dt>Status</dt><dd>v2 shipped · 356 tests passing</dd></div>
       <div><dt>License</dt><dd>MIT · saagpatel/ITServiceHealth</dd></div>
     </dl>
   </div>
@@ -351,22 +351,22 @@
   <p>
     Every outage arrives at the help desk before it reaches the vendor's
     status page. By the time the page flips to yellow, users have
-    already filed tickets, pinged Slack, and escalated to a manager. The
+    already filed tickets, pinged the chat platform, and escalated to a manager. The
     vendor's incident is twenty minutes old. The operator's inbox is
     forty.
   </p>
 
   <p>
     The signal is fragmented, too. Statuspage.io publishes clean JSON
-    for most vendors, but Google Workspace has its own dashboard,
-    Slack has a dedicated API, and eleven of the thirty services have
+    for most vendors, but a cloud productivity suite has its own dashboard,
+    the chat platform has a dedicated API, and eleven of the thirty services have
     no programmatic feed at all. Eleven services means eleven manual
     status updates, each of which goes stale within an hour of the
     engineer who posted it walking away from their desk.
   </p>
 
   <p>
-    Slack, which is where the operators live, quickly becomes the war
+    The chat platform, which is where the operators live, quickly becomes the war
     room and the noise floor at the same time. Alerts arrive on the
     same channel as brownouts, flapping pollers, and planned vendor
     maintenance windows no one remembered to acknowledge. When an
@@ -577,7 +577,7 @@
 </section>
 
 <figure>
-  <img src="assets/exec-view.png" alt="Redesigned Pulse Executive view, active-incident state. A full-width alarm-red panel reads '2 Active Incidents' at display scale with the two service names in the subhead. Beneath it, three KPI tiles show Incidents open 2, Vendors degraded 3, and SLA 30 d at 99.42 percent with a −48 basis-point delta. A 30-day uptime strip shows three red dips. An Active impact list shows Okta SSO (major outage, 24 m) and Zoom (degraded, 11 m), each with a templated impact line.">
+  <img src="assets/exec-view.png" alt="Redesigned Pulse Executive view, active-incident state. A full-width alarm-red panel reads '2 Active Incidents' at display scale with the two service names in the subhead. Beneath it, three KPI tiles show Incidents open 2, Vendors degraded 3, and SLA 30 d at 99.42 percent with a −48 basis-point delta. A 30-day uptime strip shows three red dips. An Active impact list shows the identity provider SSO (major outage, 24 m) and video conferencing (degraded, 11 m), each with a templated impact line.">
   <figcaption>
     Executive view · active-incident state at 1920 × 1080. Single alarm-red accent reserved for degraded and major statuses; 2× typography jumps between hierarchy levels.
   </figcaption>
@@ -667,7 +667,7 @@
     <div>
       <dt>Dependency correlation</dt>
       <dd>
-        When Okta goes down, every SSO-dependent service starts
+        When the identity provider goes down, every SSO-dependent service starts
         failing. Instead of cascading twelve alerts, Pulse emits one
         aggregated upstream alert that names the dependent services
         affected. The threshold — how many dependents must be
@@ -693,7 +693,7 @@
   <p>
     The ack flow lives behind a feature flag: off by default because
     it requires a public reachability path for Slack's interactivity
-    endpoint, which the VPN-only deployment does not yet provide. The
+    endpoint, which the internal-network-only deployment does not yet provide. The
     code is in the tree; the HMAC verification is implemented; the
     tests pass; the switch flips when the network path does.
   </p>
@@ -813,7 +813,7 @@
 <footer class="colophon">
   <div>
     <h4>Repository</h4>
-    <p>github.com/saagpatel/ITServiceHealth<br>MIT licensed · 276 tests · v2 shipped</p>
+    <p>github.com/saagpatel/ITServiceHealth<br>MIT licensed · 356 tests · v2 shipped</p>
   </div>
   <div>
     <h4>Colophon</h4>
