@@ -1,13 +1,13 @@
 # IT Service Health Dashboard
 
-Real-time status monitoring dashboard for ~30 SaaS services used by Box IT. Polls vendor status pages every 60 seconds, detects changes, generates impact statements using a service dependency graph, posts Slack alerts, and displays a unified dark-themed operations dashboard.
+Real-time status monitoring dashboard for ~30 SaaS services used across an enterprise IT environment. Polls vendor status pages every 60 seconds, detects changes, generates impact statements using a service dependency graph, posts Slack alerts, and displays a unified dark-themed operations dashboard.
 
 ## Project status
 
 - **v1 (demo-ready) — SHIPPED.** All original spec delivered: polling, normalization, change detection, Slack alerting, React UI, dependency graph, timeline, SLA tracking, incident clustering, auto reports.
-- **v2 (production-ready) — SHIPPED.** Phases 0–6 of the production roadmap complete: bearer-token auth, vendor resilience (stamina + purgatory), alert quality (flap suppression, dedup, tier routing, dependency correlation, maintenance windows, flapping-badge UI), observability (structlog, Prometheus `/metrics`, Sentry, Healthchecks.io dead-man's switch), data lifecycle (production pragmas, retention, Litestream streaming + daily `VACUUM INTO` snapshot), UX productionization (severity-sorted grid, distinct poller-broken state, a11y + keyboard nav, Executive/Engineer view toggle, PWA, `recharts` SLA trend), and platform polish (CI, pre-commit, hardened launchd plist, Caddy, Keychain secrets). **356 tests passing.**
+- **v2 (production-ready) — SHIPPED.** Phases 0–6 of the production roadmap complete: bearer-token auth, vendor resilience (stamina + purgatory), alert quality (flap suppression, dedup, tier routing, dependency correlation, maintenance windows, flapping-badge UI), observability (structlog, Prometheus `/metrics`, Sentry, Healthchecks.io dead-man's switch), data lifecycle (production pragmas, retention, Litestream streaming + daily `VACUUM INTO` snapshot), UX productionization (severity-sorted grid, distinct poller-broken state, a11y + keyboard nav, Executive/Engineer view toggle, PWA, `recharts` SLA trend), and platform polish (CI, pre-commit, hardened launchd plist, Caddy, Keychain secrets). **378 tests passing.**
 - **v2 Phase 2B + Phase 7 — in tree, gated off.** Statuspage inbound webhook receiver (`WEBHOOKS_ENABLED`), Slack ack flow (`SLACK_ACK_ENABLED`), postmortem drafts (`POSTMORTEMS_ENABLED`), SLO fuel-gauge + multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped with tests but default off. Flip each flag once its prerequisites are in place (public endpoint for Slack features; postmortems need only a writable `POSTMORTEMS_DIR`).
-- **v2 Phase 7 remainder — optional.** LLM-layer impact statements, Splunk/JSM/ThousandEyes integration. Not on a fixed schedule; add as demand emerges.
+- **v2 Phase 7 remainder — optional.** LLM-layer impact statements; log-aggregation / ITSM / synthetic-monitoring integrations. Not on a fixed schedule; add as demand emerges.
 
 **Active roadmap:** [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md) — exit-criteria detail for every phase.
 **Historical spec:** [IMPLEMENTATION-ROADMAP.md](./IMPLEMENTATION-ROADMAP.md) — archived; v1 is complete.
@@ -17,8 +17,8 @@ Real-time status monitoring dashboard for ~30 SaaS services used by Box IT. Poll
 ```
 [Vendor Status Pages]
     |-- Statuspage.io JSON API (15 services)
-    |-- Slack Status API (1 service)
-    |-- Google Workspace JSON feed (2 services)
+    |-- Chat vendor status API (1 service)
+    |-- Productivity suite JSON feed (2 services)
     |-- Manual updates via POST /api/admin/status (11 services)
               | (async poll every 60s)
        [Poll Orchestrator]
@@ -28,7 +28,7 @@ Real-time status monitoring dashboard for ~30 SaaS services used by Box IT. Poll
        [Change Detector] --> diff against DB, write status_events
               |
        [Impact Statement Engine] --> dependency graph + templates
-       [Slack Alerter] --> Block Kit message to #service-validation
+       [Slack Alerter] --> Block Kit message to the ops-alert channel
        [SQLite Writer] --> update services, insert events
               |
        [FastAPI REST API] --> /api/services, /api/timeline, /api/summary
@@ -60,32 +60,40 @@ Open `http://localhost:8000` in your browser.
 
 ## Accessing the Dashboard
 
-The dashboard runs on a Mac Mini on the corporate network. Access via VPN at:
+The dashboard runs on a Mac Mini on the internal network. Access it at:
 
 ```
-http://<mac-mini-ip>:8000
+http://<host>:8000
 ```
 
-No authentication required — VPN access is the security boundary.
+No authentication required — internal-network access is the security boundary.
 
 ## Service Categories
 
-| Category | Services |
-|----------|----------|
-| Identity & Access | Okta, Duo |
-| Productivity | Box, DocuSign, Google Mail, Google Calendar, Conga, Eptura |
-| Collaboration | Slack, Zoom, RingCentral |
-| Engineering | Confluence, Jira, Jira Service Management, SnapLogic |
-| HR & People | Greenhouse, Workday, Cornerstone |
-| Finance | SAP Concur, Coupa, NetSuite, Zuora |
-| Sales & CRM | Salesforce, Partner Portal |
-| Marketing | Iterable, Marketo |
-| Network & VPN | Juniper VPN |
-| Support | Zendesk, Lithium |
+Services are organized into ten categories. The committed example registry
+(`backend/config/services.yaml`) ships a generic, runnable set that monitors
+public developer-tool status pages, so the dashboard works immediately after
+clone:
+
+| Category | Example services |
+|----------|------------------|
+| Identity & Access | Identity provider (SSO) |
+| Engineering | GitHub, npm, PyPI, Sentry |
+| Productivity | Dropbox |
+| Collaboration | Discord |
+| Network & VPN | Cloudflare |
+| Support | Ticketing / ITSM |
+| Other | Datadog |
+
+To monitor your own organization's services, copy the example to a gitignored
+`backend/config/services.local.yaml` (the loader prefers it when present) and
+list your real registry there — see that file's header for the schema and the
+full category list (identity, productivity, collaboration, engineering, HR,
+finance, sales, marketing, networking, support).
 
 ## Manual Status Updates
 
-For services without automated polling (Okta, Workday, Concur, etc.), update status via curl. **Admin endpoints require a bearer token** (set `ADMIN_API_TOKEN` in your env).
+For services without automated polling (e.g. an identity provider, an HR system, or any service with no public status API), update status via curl. **Admin endpoints require a bearer token** (set `ADMIN_API_TOKEN` in your env).
 
 ```bash
 export TOKEN="your-admin-token"
@@ -94,19 +102,19 @@ export TOKEN="your-admin-token"
 curl -X POST http://localhost:8000/api/admin/status \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"service_id": "workday", "new_status": "degraded", "detail": "Slow login page", "reason": "Reported by user in #it-help"}'
+  -d '{"service_id": "hr-system", "new_status": "degraded", "detail": "Slow login page", "reason": "Reported by user in the help channel"}'
 
 # Set to major outage
 curl -X POST http://localhost:8000/api/admin/status \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"service_id": "okta", "new_status": "major_outage", "detail": "SSO completely unavailable", "reason": "Confirmed with vendor"}'
+  -d '{"service_id": "identity-provider", "new_status": "major_outage", "detail": "SSO completely unavailable", "reason": "Confirmed with vendor"}'
 
 # Resolve (set back to operational)
 curl -X POST http://localhost:8000/api/admin/status \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"service_id": "okta", "new_status": "operational", "reason": "Vendor posted recovery"}'
+  -d '{"service_id": "identity-provider", "new_status": "operational", "reason": "Vendor posted recovery"}'
 ```
 
 Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`, `unknown`. The `reason` field is required for audit trail.
@@ -115,7 +123,7 @@ Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`, `un
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SLACK_WEBHOOK_URL` | _(none)_ | Slack incoming webhook URL for #service-validation alerts |
+| `SLACK_WEBHOOK_URL` | _(none)_ | Slack incoming webhook URL for ops-alert channel notifications |
 | `DATABASE_PATH` | `data.db` | SQLite database file path |
 | `POLL_INTERVAL_SECONDS` | `60` | How often to poll vendor status pages (1–3600) |
 | `HOST` | `127.0.0.1` | Server bind address (`0.0.0.0` for network access) |
@@ -192,13 +200,13 @@ cp .env.example backend/.env
 # Edit backend/.env: set HOST=0.0.0.0, SLACK_WEBHOOK_URL=<your-url>
 
 # 3. Update plist paths
-# Edit com.box.it-health-dashboard.plist:
+# Edit com.company.it-health-dashboard.plist:
 #   - Replace /path/to/ with actual project path
 #   - Add SLACK_WEBHOOK_URL
 
 # 4. Install launchd service
-sudo cp com.box.it-health-dashboard.plist /Library/LaunchDaemons/
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.box.it-health-dashboard.plist
+sudo cp com.company.it-health-dashboard.plist /Library/LaunchDaemons/
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.company.it-health-dashboard.plist
 
 # 5. Verify
 curl http://localhost:8000/api/health
@@ -210,10 +218,10 @@ sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add $(which python3)
 Manage the service:
 ```bash
 # Stop
-sudo launchctl bootout system/com.box.it-health-dashboard
+sudo launchctl bootout system/com.company.it-health-dashboard
 
 # Start
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.box.it-health-dashboard.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.company.it-health-dashboard.plist
 
 # View logs
 tail -f /var/log/it-health-dashboard.log
@@ -237,9 +245,9 @@ $EDITOR /opt/it-health/deploy/litestream.yml
 litestream validate -config /opt/it-health/deploy/litestream.yml
 
 # 4. Install the sidecar launchd daemon
-cp deploy/com.box.it-health-dashboard-litestream.plist.example \
-   /Library/LaunchDaemons/com.box.it-health-dashboard-litestream.plist
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.box.it-health-dashboard-litestream.plist
+cp deploy/com.company.it-health-dashboard-litestream.plist.example \
+   /Library/LaunchDaemons/com.company.it-health-dashboard-litestream.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.company.it-health-dashboard-litestream.plist
 
 # 5. Confirm replication is working
 litestream snapshots -config /opt/it-health/deploy/litestream.yml
@@ -251,7 +259,7 @@ Litestream RPO is ~1 second — after the initial snapshot, every WAL frame ship
 
 ```bash
 # 1. Stop the main app so the DB isn't being written to
-sudo launchctl bootout system/com.box.it-health-dashboard
+sudo launchctl bootout system/com.company.it-health-dashboard
 
 # 2. Restore from replica (picks up the latest snapshot + WAL frames)
 litestream restore -config /opt/it-health/deploy/litestream.yml \
@@ -259,7 +267,7 @@ litestream restore -config /opt/it-health/deploy/litestream.yml \
                    /opt/it-health/data.db
 
 # 3. Start the app — it applies pending migrations on boot and resumes polling
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.box.it-health-dashboard.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.company.it-health-dashboard.plist
 ```
 
 ### Data retention
@@ -300,4 +308,4 @@ The retention job runs every `RETENTION_INTERVAL_HOURS` (default 168 = weekly) a
 All production phases (0–6) and the primary Phase 7 reach features are complete. Full exit-criteria history is in [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md). Remaining optional work:
 
 - **Phase 7 — LLM layer:** Natural-language impact statements; deferred post-Phase-7.
-- **Phase 7 — Integrations:** Splunk, ThousandEyes, Datadog, JSM — deferred to org demand.
+- **Phase 7 — Integrations:** log aggregation, synthetic monitoring, metrics, and ITSM platforms — deferred to demand.
