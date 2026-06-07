@@ -1,60 +1,49 @@
-# IT Service Health Dashboard — Service Dependency Graph
-# Format: upstream → downstream (when upstream breaks, downstream is impacted)
+# Service dependency graph (EXAMPLE)
+#
+# Maps an upstream service id to the downstream services impacted when it
+# degrades. Used to generate impact statements ("X is down — this affects Y").
+# Every id here must exist in services.yaml. The sentinel `all_internal`
+# expands to every service except the upstream itself.
+#
+# For a real deployment, copy this to `dependencies.local.yaml` (gitignored)
+# alongside `services.local.yaml`; the loader prefers the .local files.
+#
+# Edge schema: { service: <id>, impact: <text>, severity: critical|high|medium|low }
 
 dependencies:
-  # Identity & Access — highest blast radius
-  okta:
-    - service: box
-      impact: "Box SSO login unavailable"
+  # The identity provider is the login broker — an outage blocks SSO access
+  # to everything that authenticates through it.
+  identity-provider:
+    - service: github
+      impact: "SSO login to source control unavailable"
       severity: critical
-    - service: slack
-      impact: "Slack SSO login may fail for new sessions"
-      severity: critical
-    - service: zoom
-      impact: "Zoom SSO login unavailable"
-      severity: critical
-    - service: salesforce
-      impact: "Salesforce SSO login unavailable"
-      severity: critical
-    - service: jira
-      impact: "Jira SSO login unavailable"
+    - service: npm
+      impact: "SSO login to the package registry unavailable"
       severity: high
-    - service: confluence
-      impact: "Confluence SSO login unavailable"
+    - service: pypi
+      impact: "SSO login to the package index unavailable"
       severity: high
-    - service: concur
-      impact: "Concur SSO login unavailable"
+    - service: sentry
+      impact: "SSO login to error tracking unavailable"
+      severity: medium
+    - service: dropbox
+      impact: "SSO login to file storage unavailable"
       severity: high
-    - service: workday
-      impact: "Workday SSO login unavailable"
-      severity: high
-    - service: greenhouse
-      impact: "Greenhouse SSO login unavailable"
+    - service: discord
+      impact: "SSO login to team chat unavailable"
       severity: medium
-    - service: docusign
-      impact: "DocuSign SSO login unavailable"
+    - service: datadog
+      impact: "SSO login to observability unavailable"
       severity: medium
-    - service: zendesk
-      impact: "Zendesk SSO login unavailable"
-      severity: medium
-    - service: netsuite
-      impact: "NetSuite SSO login unavailable"
-      severity: medium
-
-  duo:
-    - service: okta
-      impact: "MFA push notifications unavailable; Okta login may require fallback methods"
-      severity: critical
-
-  # Collaboration dependencies
-  slack:
-    - service: servicedesk
-      impact: "Slack-based IT support channel and Aisera bot unavailable"
+    - service: ticketing
+      impact: "SSO login to the ITSM/ticketing system unavailable"
       severity: high
 
-  # Google Workspace
-  google-mail:
-    - service: google-calendar
-      impact: "Calendar notifications and email invites may be delayed"
+  # Edge/CDN provider — degradation ripples to web-facing services behind it.
+  cloudflare:
+    - service: github
+      impact: "Elevated latency reaching source-control web UI"
       severity: medium
-
+    - service: sentry
+      impact: "Elevated latency reaching the error-tracking UI"
+      severity: low

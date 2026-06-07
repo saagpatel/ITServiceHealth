@@ -155,12 +155,21 @@ class Settings(BaseSettings):
         return str(self.healthcheck_ping_url) if self.healthcheck_ping_url else None
 
     @property
+    def _config_dir(self) -> Path:
+        return Path(__file__).parent.parent / "config"
+
+    @property
     def services_yaml_path(self) -> Path:
-        return Path(__file__).parent.parent / "config" / "services.yaml"
+        # Prefer a gitignored services.local.yaml (the operator's real
+        # registry) when present; otherwise fall back to the committed
+        # generic example.
+        local = self._config_dir / "services.local.yaml"
+        return local if local.exists() else self._config_dir / "services.yaml"
 
     @property
     def dependencies_yaml_path(self) -> Path:
-        return Path(__file__).parent.parent / "config" / "dependencies.yaml"
+        local = self._config_dir / "dependencies.local.yaml"
+        return local if local.exists() else self._config_dir / "dependencies.yaml"
 
     @property
     def migrations_dir(self) -> Path:
