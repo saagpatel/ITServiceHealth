@@ -35,7 +35,7 @@ cd backend && python run.py
 
 Open `http://localhost:8000`.
 
-**CI:** GitHub Actions — `uv`, `ruff`, `mypy --strict`, `pytest`; CodeQL analysis. 356 tests passing.
+**CI:** GitHub Actions — `uv`, `ruff`, `mypy --strict`, `pytest`; CodeQL analysis. 378 tests passing.
 
 ## Conventions
 
@@ -88,7 +88,7 @@ Internal web dashboard that aggregates real-time health status of ~30 SaaS servi
 
 ## Current State
 
-**v2 SHIPPED — Phases 0–6 complete; Phase 2B + Phase 7 (Statuspage inbound webhook + Slack ack) in tree, gated off by default.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. **356 tests passing.** The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
+**v2 SHIPPED — Phases 0–6 complete; Phase 2B + Phase 7 (Statuspage inbound webhook + Slack ack) in tree, gated off by default.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. **378 tests passing.** The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
 
 Main also includes a parallel UX sprint that shipped alongside Phase 5:
 - **Executive / Engineer view toggle** — `ViewContext` gates the grid vs category summary and engineer-only affordances (graph, timeline, shortcuts).
