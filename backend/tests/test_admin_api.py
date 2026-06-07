@@ -25,12 +25,14 @@ async def seeded_app(tmp_path):
 
     services = load_services()
     from tests.test_seeder import seed_deps_with_db, seed_services_with_db
+
     await seed_services_with_db(conn, services)
     deps = load_dependencies(known_service_ids={s.id for s in services})
     await seed_deps_with_db(conn, deps, [s.id for s in services])
 
     # Import app after DB is initialized
     from app.main import app
+
     yield app
 
     await close_db()
@@ -48,11 +50,14 @@ async def client(seeded_app):
 
 class TestAdminAuth:
     async def test_missing_token_rejected(self, client):
-        resp = await client.post("/api/admin/status", json={
-            "service_id": "okta",
-            "new_status": "degraded",
-            "reason": "test",
-        })
+        resp = await client.post(
+            "/api/admin/status",
+            json={
+                "service_id": "okta",
+                "new_status": "degraded",
+                "reason": "test",
+            },
+        )
         assert resp.status_code == 401
 
     async def test_wrong_token_rejected(self, client):
@@ -101,7 +106,7 @@ class TestAdminStatusEndpoint:
                 "service_id": "okta",
                 "new_status": "degraded",
                 "detail": "SSO slow",
-                "reason": "User reported in #it-help",
+                "reason": "User reported in the help channel",
             },
             headers=AUTH_HEADERS,
         )
@@ -162,6 +167,7 @@ class TestAdminStatusEndpoint:
         assert resp.status_code == 200
 
         from app.database import get_db
+
         db = await get_db()
         cursor = await db.execute(
             """SELECT source, new_status, updated_by, reason, client_ip
@@ -200,10 +206,9 @@ class TestAdminStatusEndpoint:
         assert body["meta"]["status_changed"] is False
 
         from app.database import get_db
+
         db = await get_db()
-        cursor = await db.execute(
-            "SELECT count(*) FROM status_events WHERE service_id='concur'"
-        )
+        cursor = await db.execute("SELECT count(*) FROM status_events WHERE service_id='concur'")
         assert (await cursor.fetchone())[0] == 1
 
     async def test_response_envelope_structure(self, client):
