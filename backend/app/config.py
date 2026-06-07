@@ -83,6 +83,13 @@ class Settings(BaseSettings):
     # changes state, emit one aggregated alert instead of one per dependent.
     dependency_correlation_threshold: int = Field(default=3, gt=0, le=100)
 
+    # The service id that acts as the SSO / identity broker. When a service
+    # with this id changes state, impact statements use the dedicated SSO
+    # template (an identity-provider outage blocks login to everything
+    # downstream). Leave unset to disable the special case — e.g. set
+    # SSO_BROKER_SERVICE_ID=<your-identity-provider-id> in the environment.
+    sso_broker_service_id: str | None = None
+
     # Observability (Phase 3)
     # Pretty console output in dev, JSON in prod. JSON is cheap to parse
     # and preserves contextvars (poll_cycle_id etc.) as first-class fields.
