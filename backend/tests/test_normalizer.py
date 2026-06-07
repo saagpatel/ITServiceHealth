@@ -147,58 +147,65 @@ class TestCurrentStatus:
 
 class TestProductFeedStatus:
     def test_no_incidents_operational(self):
-        assert normalize_product_feed_status([], "google-mail") == ServiceStatus.OPERATIONAL
+        assert normalize_product_feed_status([], "feed-product-a") == ServiceStatus.OPERATIONAL
 
     def test_active_incident_for_product(self):
         incidents = [
             {
-                "affected_products": [{"title": "Gmail"}],
+                "affected_products": [{"title": "Product A"}],
                 "most_recent_update": {"status": "SERVICE_DISRUPTION"},
             },
         ]
         assert (
-            normalize_product_feed_status(incidents, "google-mail") == ServiceStatus.PARTIAL_OUTAGE
+            normalize_product_feed_status(incidents, "feed-product-a")
+            == ServiceStatus.PARTIAL_OUTAGE
         )
 
     def test_active_outage_for_product(self):
         incidents = [
             {
-                "affected_products": [{"title": "Gmail"}],
+                "affected_products": [{"title": "Product A"}],
                 "most_recent_update": {"status": "SERVICE_OUTAGE"},
             },
         ]
-        assert normalize_product_feed_status(incidents, "google-mail") == ServiceStatus.MAJOR_OUTAGE
+        assert (
+            normalize_product_feed_status(incidents, "feed-product-a") == ServiceStatus.MAJOR_OUTAGE
+        )
 
     def test_resolved_incident_is_operational(self):
         incidents = [
             {
-                "affected_products": [{"title": "Gmail"}],
+                "affected_products": [{"title": "Product A"}],
                 "end": "2026-04-01T00:00:00Z",
                 "most_recent_update": {"status": "SERVICE_DISRUPTION"},
             },
         ]
-        assert normalize_product_feed_status(incidents, "google-mail") == ServiceStatus.OPERATIONAL
+        assert (
+            normalize_product_feed_status(incidents, "feed-product-a") == ServiceStatus.OPERATIONAL
+        )
 
     def test_incident_for_different_product(self):
         incidents = [
             {
-                "affected_products": [{"title": "Google Drive"}],
+                "affected_products": [{"title": "Unmapped Product"}],
                 "most_recent_update": {"status": "SERVICE_OUTAGE"},
             },
         ]
-        assert normalize_product_feed_status(incidents, "google-mail") == ServiceStatus.OPERATIONAL
+        assert (
+            normalize_product_feed_status(incidents, "feed-product-a") == ServiceStatus.OPERATIONAL
+        )
 
     def test_calendar_product(self):
         incidents = [
             {
-                "affected_products": [{"title": "Google Calendar"}],
+                "affected_products": [{"title": "Product B"}],
                 "most_recent_update": {"status": "degraded"},
             },
         ]
-        assert normalize_product_feed_status(incidents, "google-calendar") == ServiceStatus.DEGRADED
+        assert normalize_product_feed_status(incidents, "feed-product-b") == ServiceStatus.DEGRADED
 
     def test_unknown_service_id(self):
-        assert normalize_product_feed_status([], "google-drive") == ServiceStatus.UNKNOWN
+        assert normalize_product_feed_status([], "feed-product-unknown") == ServiceStatus.UNKNOWN
 
 
 # ── RSS Feed ──────────────────────────────────────────────────────

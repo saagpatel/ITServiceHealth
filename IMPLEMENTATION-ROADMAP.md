@@ -13,7 +13,7 @@
 [Vendor Status Pages]
     ├── Statuspage.io JSON API (/api/v2/summary.json) — ~20 services
     ├── A cloud productivity suite JSON feed + RSS — 2 services (Mail, Calendar)
-    ├── Slack Status API (slack-status.com/api/v2.0.0/current) — 1 service
+    ├── the chat-platform status API (chat-status.example.com/api/v2.0.0/current) — 1 service
     └── Manual updates via POST /api/admin/status — ~10 services
               ↓ (async poll every 60s via APScheduler)
        [Polling Workers]
@@ -53,8 +53,8 @@ it-service-health/
 │   │   │   ├── __init__.py
 │   │   │   ├── scheduler.py       # APScheduler async setup, 60s interval, error handling
 │   │   │   ├── statuspage_poller.py  # Statuspage.io JSON API poller (handles ~20 services)
-│   │   │   ├── google_poller.py   # Google Workspace status poller (JSON feed + RSS)
-│   │   │   ├── slack_poller.py    # Slack Status API poller (slack-status.com)
+│   │   │   ├── product_feed_poller.py   # Cloud productivity suite status poller (JSON feed + RSS)
+│   │   │   ├── current_status_poller.py    # Chat-platform status API poller
 │   │   │   ├── rss_poller.py      # Fallback RSS/Atom poller for services without JSON API
 │   │   │   ├── normalizer.py      # Vendor status string → ServiceStatus enum mapping
 │   │   │   └── change_detector.py # Diff current vs stored state, emit change events
@@ -117,10 +117,10 @@ it-service-health/
 ```sql
 -- Service registry: static + current state for each monitored service
 CREATE TABLE services (
-    id TEXT PRIMARY KEY,                            -- slug: "identity-provider", "google-mail", "slack"
-    display_name TEXT NOT NULL,                     -- "Identity Provider", "Google Mail", "Slack"
+    id TEXT PRIMARY KEY,                            -- slug: "identity-provider", "cloud-mail", "chat-platform"
+    display_name TEXT NOT NULL,                     -- "Identity Provider", "Cloud Mail", "Chat Platform"
     category TEXT NOT NULL,                         -- see categories below
-    poll_type TEXT NOT NULL DEFAULT 'manual',       -- "statuspage_json", "google_json", "slack_api", "rss", "manual"
+    poll_type TEXT NOT NULL DEFAULT 'manual',       -- "statuspage_json", "product_feed_json", "current_status_api", "rss", "manual"
     poll_url TEXT,                                  -- API/feed URL to poll (NULL if manual)
     statuspage_component_name TEXT,                 -- for statuspage_json: match this component name in API response
     status_page_url TEXT,                           -- vendor public status page URL for linking
@@ -140,7 +140,7 @@ CREATE TABLE status_events (
     vendor_title TEXT,                              -- incident title from vendor
     vendor_detail TEXT,                             -- incident description/body from vendor
     impact_statement TEXT,                          -- generated template-based impact text
-    source TEXT NOT NULL DEFAULT 'statuspage_json', -- "statuspage_json", "google_json", "slack_api", "rss", "manual"
+    source TEXT NOT NULL DEFAULT 'statuspage_json', -- "statuspage_json", "product_feed_json", "current_status_api", "rss", "manual"
     vendor_incident_id TEXT,                        -- vendor's incident ID for deduplication
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -220,14 +220,14 @@ These vendors use Atlassian Statuspage. Poll their `/api/v2/summary.json` endpoi
 
 **IMPORTANT: Claude Code must verify every URL during Phase 0 by running `curl <url>` and confirming valid JSON is returned. Some URLs may have changed or use custom Statuspage domains. If a URL fails, search for the vendor's status page and find the correct Statuspage.io URL, then check if `/api/v2/summary.json` is accessible.**
 
-### Poll Type: `slack_api`
-Slack has its own dedicated status API, not Statuspage.
+### Poll Type: `current_status_api`
+Some collaboration vendors expose a dedicated current-status API, not Statuspage.
 
 | Service | API URL | Category |
 |---------|---------|----------|
-| Slack | `https://slack-status.com/api/v2.0.0/current` | collaboration |
+| Chat platform | `https://chat-status.example.com/api/v2.0.0/current` | collaboration |
 
-**Slack Status API response shape:**
+**Current-status API response shape:**
 ```json
 {
   "status": "ok|active",
@@ -241,7 +241,7 @@ Slack has its own dedicated status API, not Statuspage.
       "title": "Some customers may experience...",
       "type": "incident|notice|maintenance",
       "status": "active|resolved",
-      "url": "https://status.slack.com/2024-01/...",
+      "url": "https://status.example.com/2024-01/...",
       "services": ["Login/SSO", "Messaging", "Connections", ...],
       "notes": [{ "date_created": "...", "body": "..." }]
     }
@@ -250,15 +250,15 @@ Slack has its own dedicated status API, not Statuspage.
 ```
 When `status` is `"ok"` and `active_incidents` is empty → operational. Otherwise map by incident type/impact.
 
-### Poll Type: `google_json`
+### Poll Type: `product_feed_json`
 A cloud productivity suite uses its own status dashboard with a JSON feed and RSS.
 
 | Service | JSON URL | RSS URL | Category |
 |---------|----------|---------|----------|
-| Cloud Mail | `https://www.google.com/appsstatus/dashboard/incidents.json` | `https://www.google.com/appsstatus/rss/en` | productivity |
+| Cloud Mail | `https://feed.example.com/incidents.json` | `https://feed.example.com/rss` | productivity |
 | Cloud Calendar | (same JSON feed — filter by product) | (same RSS feed) | productivity |
 
-**Cloud productivity suite JSON feed:** Contains incidents for ALL products in the suite. Filter by `service_name` field matching the relevant products. The feed provides `most_recent_update.status` which maps to severity. RSS feed at `https://www.google.com/appsstatus/rss/en` is a fallback.
+**Cloud productivity suite JSON feed:** Contains incidents for ALL products in the suite. Filter by `service_name` field matching the relevant products. The feed provides `most_recent_update.status` which maps to severity. RSS feed at `https://feed.example.com/rss` is a fallback.
 
 **Note:** The cloud productivity suite's JSON feed returns incident *history*, not a real-time component status like Statuspage. For current status: if no active (non-resolved) incidents exist for the product → operational. If active incidents exist → map severity.
 
@@ -338,9 +338,9 @@ STATUSPAGE_INDICATOR_MAP = {
 }
 ```
 
-### Slack Status API Mapping
+### Current-status API mapping
 ```python
-def normalize_slack_status(response: dict) -> ServiceStatus:
+def normalize_current_status(response: dict) -> ServiceStatus:
     if response["status"] == "ok" and not response.get("active_incidents"):
         return ServiceStatus.OPERATIONAL
     incidents = response.get("active_incidents", [])
@@ -353,9 +353,9 @@ def normalize_slack_status(response: dict) -> ServiceStatus:
     return ServiceStatus.DEGRADED  # default if active but unknown type
 ```
 
-### Google Workspace Mapping
+### Product-feed mapping
 ```python
-# Google incidents have severity levels in updates
+# Cloud productivity suite incidents have severity levels in updates
 # If no active incident for the product → OPERATIONAL
 # If active incident exists → DEGRADED (default), escalate based on description keywords
 ```
@@ -702,8 +702,8 @@ npm install -D tailwindcss @tailwindcss/vite
 **In scope (v1 demo):**
 - Unified status board for all ~30 services
 - Statuspage.io JSON API polling for ~20 services
-- Slack Status API polling
-- Google Workspace JSON/RSS polling
+- Chat-platform status API polling
+- Cloud productivity suite JSON/RSS polling
 - Manual status update API for remaining services
 - Service dependency graph with impact statement templates
 - Timeline view of recent status changes
@@ -771,7 +771,7 @@ npm install -D tailwindcss @tailwindcss/vite
 
 **Risks:**
 - Some Statuspage.io URLs may have changed or use custom domains → **Mitigation:** Phase 0 Task 5 explicitly requires verifying each URL. Document any failures and fall back to RSS or manual.
-- Google's JSON feed URL may not be publicly documented and could change → **Mitigation:** Fall back to RSS at `https://www.google.com/appsstatus/rss/en`
+- The cloud productivity suite JSON feed URL may not be publicly documented and could change → **Mitigation:** Fall back to RSS at `https://feed.example.com/rss`
 
 ---
 
@@ -782,8 +782,8 @@ npm install -D tailwindcss @tailwindcss/vite
 **Tasks:**
 
 1. Extend `statuspage_poller.py` to handle ALL statuspage_json services in a single poll cycle — **Acceptance:** One async function iterates `services.yaml`, polls each statuspage_json service, handles errors per-service (one failure doesn't stop others)
-2. Implement `slack_poller.py` for Slack Status API — **Acceptance:** Polls `https://slack-status.com/api/v2.0.0/current`, normalizes response to ServiceStatus
-3. Implement `google_poller.py` for Google Workspace — **Acceptance:** Fetches Google JSON/RSS feed, filters for Gmail and Calendar, returns per-product status
+2. Implement `current_status_poller.py` for the chat-platform status API — **Acceptance:** Polls `https://chat-status.example.com/api/v2.0.0/current`, normalizes response to ServiceStatus
+3. Implement `product_feed_poller.py` for the cloud productivity suite — **Acceptance:** Fetches JSON/RSS feed, filters for Cloud Mail and Cloud Calendar, returns per-product status
 4. Implement `change_detector.py` — **Acceptance:** Compares poll result against `services.current_status` in DB; on change: inserts `status_events` row, updates `services` row, returns list of changes
 5. Implement `dependencies/graph.py` — **Acceptance:** `test_dependencies.py` passes; `get_downstream("identity-provider")` returns all SSO-dependent services with impact descriptions
 6. Implement `alerting/templates.py` — **Acceptance:** `test_templates.py` passes; generates correct impact statements for identity provider outage, VPN outage, generic service degradation

@@ -23,11 +23,16 @@ async def seeded_app(tmp_path):
     db_path = str(tmp_path / "test.db")
     conn = await init_db(db_path)
 
-    services = load_services()
-    from tests.test_seeder import seed_deps_with_db, seed_services_with_db
+    from tests.test_seeder import (
+        _DEPENDENCIES_YAML,
+        _SERVICES_YAML,
+        seed_deps_with_db,
+        seed_services_with_db,
+    )
 
+    services = load_services(path=_SERVICES_YAML)
     await seed_services_with_db(conn, services)
-    deps = load_dependencies(known_service_ids={s.id for s in services})
+    deps = load_dependencies(path=_DEPENDENCIES_YAML, known_service_ids={s.id for s in services})
     await seed_deps_with_db(conn, deps, [s.id for s in services])
 
     # Import app after DB is initialized
@@ -53,7 +58,7 @@ class TestAdminAuth:
         resp = await client.post(
             "/api/admin/status",
             json={
-                "service_id": "okta",
+                "service_id": "identity-provider",
                 "new_status": "degraded",
                 "reason": "test",
             },
@@ -64,7 +69,7 @@ class TestAdminAuth:
         resp = await client.post(
             "/api/admin/status",
             json={
-                "service_id": "okta",
+                "service_id": "identity-provider",
                 "new_status": "degraded",
                 "reason": "test",
             },
@@ -77,7 +82,7 @@ class TestAdminAuth:
         resp = await client.post(
             "/api/admin/status",
             json={
-                "service_id": "okta",
+                "service_id": "identity-provider",
                 "new_status": "degraded",
                 "reason": "test",
             },
@@ -89,7 +94,7 @@ class TestAdminAuth:
         resp = await client.post(
             "/api/admin/status",
             json={
-                "service_id": "okta",
+                "service_id": "identity-provider",
                 "new_status": "degraded",
                 "reason": "test",
             },
@@ -103,7 +108,7 @@ class TestAdminStatusEndpoint:
         resp = await client.post(
             "/api/admin/status",
             json={
-                "service_id": "okta",
+                "service_id": "identity-provider",
                 "new_status": "degraded",
                 "detail": "SSO slow",
                 "reason": "User reported in the help channel",
@@ -134,7 +139,7 @@ class TestAdminStatusEndpoint:
         resp = await client.post(
             "/api/admin/status",
             json={
-                "service_id": "okta",
+                "service_id": "identity-provider",
                 "new_status": "invalid_status",
                 "reason": "test",
             },
@@ -146,7 +151,7 @@ class TestAdminStatusEndpoint:
         resp = await client.post(
             "/api/admin/status",
             json={
-                "service_id": "okta",
+                "service_id": "identity-provider",
                 "new_status": "degraded",
             },
             headers=AUTH_HEADERS,
@@ -157,7 +162,7 @@ class TestAdminStatusEndpoint:
         resp = await client.post(
             "/api/admin/status",
             json={
-                "service_id": "workday",
+                "service_id": "ticketing",
                 "new_status": "major_outage",
                 "detail": "Down",
                 "reason": "Confirmed with vendor support",
@@ -171,7 +176,7 @@ class TestAdminStatusEndpoint:
         db = await get_db()
         cursor = await db.execute(
             """SELECT source, new_status, updated_by, reason, client_ip
-               FROM status_events WHERE service_id='workday'"""
+               FROM status_events WHERE service_id='ticketing'"""
         )
         row = dict(await cursor.fetchone())
         assert row["source"] == "manual"
@@ -185,7 +190,7 @@ class TestAdminStatusEndpoint:
         await client.post(
             "/api/admin/status",
             json={
-                "service_id": "concur",
+                "service_id": "datadog",
                 "new_status": "degraded",
                 "reason": "first update",
             },
@@ -194,7 +199,7 @@ class TestAdminStatusEndpoint:
         resp = await client.post(
             "/api/admin/status",
             json={
-                "service_id": "concur",
+                "service_id": "datadog",
                 "new_status": "degraded",
                 "detail": "Still slow",
                 "reason": "follow-up",
@@ -208,14 +213,14 @@ class TestAdminStatusEndpoint:
         from app.database import get_db
 
         db = await get_db()
-        cursor = await db.execute("SELECT count(*) FROM status_events WHERE service_id='concur'")
+        cursor = await db.execute("SELECT count(*) FROM status_events WHERE service_id='datadog'")
         assert (await cursor.fetchone())[0] == 1
 
     async def test_response_envelope_structure(self, client):
         resp = await client.post(
             "/api/admin/status",
             json={
-                "service_id": "okta",
+                "service_id": "identity-provider",
                 "new_status": "operational",
                 "reason": "resolved",
             },

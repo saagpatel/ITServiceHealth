@@ -43,10 +43,10 @@ class RoutingDecision:
 
     should_send: bool
     webhook_url: str | None
-    channel_mention: str | None     # "<!here>" for critical tier, else None
+    channel_mention: str | None  # "<!here>" for critical tier, else None
     dedup_key: str
     tier: str
-    suppressed_by: str | None       # None if sent, else reason code
+    suppressed_by: str | None  # None if sent, else reason code
     # If this change was consolidated into an aggregated upstream alert,
     # name + status of the upstream; caller suppresses the individual alert.
     aggregated_under: str | None = None
@@ -115,7 +115,8 @@ async def was_recently_alerted(
 
 
 async def get_service_tier(
-    db: aiosqlite.Connection, service_id: str,
+    db: aiosqlite.Connection,
+    service_id: str,
 ) -> tuple[str, str | None]:
     """Return (tier, slack_channel_override) for a service."""
     cursor = await db.execute(
@@ -167,7 +168,9 @@ async def route_status_change(
     # Recoveries to 'operational' skip dedup — users always want to know
     # "it's back", even if they just saw the outage alert minutes ago.
     if change.new_status != "operational" and await was_recently_alerted(
-        db, dedup_key, settings.alert_dedup_window_seconds,
+        db,
+        dedup_key,
+        settings.alert_dedup_window_seconds,
     ):
         return RoutingDecision(
             should_send=False,
@@ -249,11 +252,13 @@ async def record_alert(
     # Mirror into Prometheus so operators can scrape alert hygiene trends
     if decision.suppressed_by:
         ALERTS_SUPPRESSED_TOTAL.labels(
-            kind=alert_kind, reason=decision.suppressed_by,
+            kind=alert_kind,
+            reason=decision.suppressed_by,
         ).inc()
     else:
         ALERTS_SENT_TOTAL.labels(
-            kind=alert_kind, severity=decision.tier,
+            kind=alert_kind,
+            severity=decision.tier,
         ).inc()
 
 
@@ -263,7 +268,7 @@ async def record_alert(
 
 
 def build_slo_burn_rate_dedup_key(service_id: str, severity: str) -> str:
-    """e.g. 'slo_burn:slack_api:fast' — used by alert_sent_log for dedup."""
+    """e.g. 'slo_burn:identity-provider:fast' — used by alert_sent_log for dedup."""
     return f"slo_burn:{service_id}:{severity}"
 
 
@@ -351,15 +356,18 @@ async def record_slo_alert(
 
     if decision.suppressed_by:
         ALERTS_SUPPRESSED_TOTAL.labels(
-            kind="slo_burn_rate", reason=decision.suppressed_by,
+            kind="slo_burn_rate",
+            reason=decision.suppressed_by,
         ).inc()
     else:
         ALERTS_SENT_TOTAL.labels(
-            kind="slo_burn_rate", severity=decision.tier,
+            kind="slo_burn_rate",
+            severity=decision.tier,
         ).inc()
 
 
 # ── Dependency correlation ──────────────────────────────────────────
+
 
 async def find_aggregation_candidates(
     db: aiosqlite.Connection,
@@ -382,7 +390,8 @@ async def find_aggregation_candidates(
 
     # Build quick lookup: which service_ids in this batch are going non-operational?
     affected_ids = {
-        c.service_id for c in changes
+        c.service_id
+        for c in changes
         if c.new_status != "operational" and c.previous_status == "operational"
     }
     if not affected_ids:
@@ -407,7 +416,8 @@ async def find_aggregation_candidates(
         declared_downstream = {row[0] for row in await cursor.fetchall()}
 
         consolidated = [
-            c for c in changes
+            c
+            for c in changes
             if c.service_id != upstream_change.service_id
             and c.service_id in declared_downstream
             and c.service_id in affected_ids

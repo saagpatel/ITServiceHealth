@@ -112,10 +112,11 @@ def normalize_current_status(response: dict) -> ServiceStatus:
 
 # ── Product Feed ───────────────────────────────────────────────────
 
-# Product name mappings for filtering the multi-product incident feed
+# Maps a service id to the product-title strings that identify it in a
+# multi-product status feed. Populate per your feed adapter's payload.
 PRODUCT_FEED_NAMES: dict[str, list[str]] = {
-    "google-mail": ["Gmail", "Google Mail"],
-    "google-calendar": ["Google Calendar"],
+    "feed-product-a": ["Product A", "Service A"],
+    "feed-product-b": ["Product B"],
 }
 
 

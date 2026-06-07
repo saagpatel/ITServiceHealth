@@ -136,7 +136,7 @@ async def resilient_fetch(
 
     `headers` forwards through to ``client.get`` so pollers that need
     vendor-specific headers (e.g., ``Accept: application/json`` for
-    Slack's redirect-happy status host) can pass them without
+    some vendors' redirect-happy status hosts) can pass them without
     bypassing the resilience layer.
 
     Raises:

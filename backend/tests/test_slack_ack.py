@@ -120,6 +120,7 @@ async def ack_app(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "slack_signing_secret", SecretStr(SIGNING_SECRET))
 
     from app.main import app
+
     yield app, conn
 
     await close_db()
@@ -174,7 +175,8 @@ async def test_valid_ack_updates_db_and_calls_response_url(ack_client):
     blocks = posted_body.get("blocks", [])
     context_texts = [
         elem.get("text", "")
-        for b in blocks if b.get("type") == "context"
+        for b in blocks
+        if b.get("type") == "context"
         for elem in b.get("elements", [])
         if isinstance(elem.get("text"), str)
     ]
@@ -244,7 +246,8 @@ async def test_disabled_returns_404(tmp_path, monkeypatch):
     sig = _slack_sign(body, SIGNING_SECRET, ts)
 
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test",
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as client:
         resp = await client.post(
             "/api/slack/interactivity",
@@ -273,7 +276,8 @@ async def test_signing_secret_not_configured_returns_503(tmp_path, monkeypatch):
     sig = _slack_sign(body, SIGNING_SECRET, ts)
 
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test",
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as client:
         resp = await client.post(
             "/api/slack/interactivity",
@@ -320,7 +324,8 @@ def test_ack_button_present_when_ack_enabled(monkeypatch):
     )
 
     ack_actions = [
-        b for b in payload["blocks"]
+        b
+        for b in payload["blocks"]
         if b.get("type") == "actions"
         and any(e.get("action_id") == "ack_alert" for e in b.get("elements", []))
     ]
@@ -346,7 +351,8 @@ def test_ack_button_absent_when_ack_disabled(monkeypatch):
     )
 
     ack_actions = [
-        b for b in payload["blocks"]
+        b
+        for b in payload["blocks"]
         if b.get("type") == "actions"
         and any(e.get("action_id") == "ack_alert" for e in b.get("elements", []))
     ]
@@ -369,7 +375,8 @@ def test_ack_button_absent_when_no_dedup_key(monkeypatch):
     )
 
     ack_actions = [
-        b for b in payload["blocks"]
+        b
+        for b in payload["blocks"]
         if b.get("type") == "actions"
         and any(e.get("action_id") == "ack_alert" for e in b.get("elements", []))
     ]
@@ -384,8 +391,8 @@ def test_aggregated_alert_has_ack_button_when_enabled(monkeypatch):
     monkeypatch.setattr(settings, "slack_ack_enabled", True)
 
     upstream = StatusChange(
-        service_id="okta",
-        service_display_name="Okta",
+        service_id="identity-provider",
+        service_display_name="Identity Provider",
         previous_status="operational",
         new_status="major_outage",
         status_detail=None,
@@ -393,8 +400,8 @@ def test_aggregated_alert_has_ack_button_when_enabled(monkeypatch):
         status_page_url=None,
     )
     dependent = StatusChange(
-        service_id="box",
-        service_display_name="Box",
+        service_id="content-platform",
+        service_display_name="Content Platform",
         previous_status="operational",
         new_status="major_outage",
         status_detail=None,
@@ -405,12 +412,13 @@ def test_aggregated_alert_has_ack_button_when_enabled(monkeypatch):
     payload = build_aggregated_upstream_alert(
         upstream_change=upstream,
         dependents=[dependent],
-        impact_statement="Okta is down",
-        dedup_key="vendor:okta:inc-999",
+        impact_statement="Identity Provider is down",
+        dedup_key="vendor:identity-provider:inc-999",
     )
 
     ack_actions = [
-        b for b in payload["blocks"]
+        b
+        for b in payload["blocks"]
         if b.get("type") == "actions"
         and any(e.get("action_id") == "ack_alert" for e in b.get("elements", []))
     ]
@@ -425,8 +433,8 @@ def test_aggregated_alert_no_ack_button_when_disabled(monkeypatch):
     monkeypatch.setattr(settings, "slack_ack_enabled", False)
 
     upstream = StatusChange(
-        service_id="okta",
-        service_display_name="Okta",
+        service_id="identity-provider",
+        service_display_name="Identity Provider",
         previous_status="operational",
         new_status="major_outage",
         status_detail=None,
@@ -437,12 +445,13 @@ def test_aggregated_alert_no_ack_button_when_disabled(monkeypatch):
     payload = build_aggregated_upstream_alert(
         upstream_change=upstream,
         dependents=[],
-        impact_statement="Okta is down",
-        dedup_key="vendor:okta:inc-999",
+        impact_statement="Identity Provider is down",
+        dedup_key="vendor:identity-provider:inc-999",
     )
 
     ack_actions = [
-        b for b in payload["blocks"]
+        b
+        for b in payload["blocks"]
         if b.get("type") == "actions"
         and any(e.get("action_id") == "ack_alert" for e in b.get("elements", []))
     ]

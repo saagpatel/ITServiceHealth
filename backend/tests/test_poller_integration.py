@@ -239,14 +239,14 @@ class TestServiceArrayPoller:
 class TestProductFeedPoller:
     @respx.mock
     async def test_operational(self):
-        respx.get("https://feed.example.com/appsstatus/incidents.json").mock(
+        respx.get("https://feed.example.com/incidents.json").mock(
             return_value=httpx.Response(200, json=[])
         )
-        services = [{"id": "google-mail"}, {"id": "google-calendar"}]
+        services = [{"id": "feed-product-a"}, {"id": "feed-product-b"}]
         async with httpx.AsyncClient() as client:
             results = await poll_product_feed(
                 client,
-                "https://feed.example.com/appsstatus/incidents.json",
+                "https://feed.example.com/incidents.json",
                 services,
             )
         assert len(results) == 2
@@ -255,14 +255,12 @@ class TestProductFeedPoller:
 
     @respx.mock
     async def test_error_propagates_to_each_service(self):
-        respx.get("https://feed.example.com/appsstatus/incidents.json").mock(
-            return_value=httpx.Response(500)
-        )
-        services = [{"id": "google-mail"}, {"id": "google-calendar"}]
+        respx.get("https://feed.example.com/incidents.json").mock(return_value=httpx.Response(500))
+        services = [{"id": "feed-product-a"}, {"id": "feed-product-b"}]
         async with httpx.AsyncClient() as client:
             results = await poll_product_feed(
                 client,
-                "https://feed.example.com/appsstatus/incidents.json",
+                "https://feed.example.com/incidents.json",
                 services,
             )
         assert len(results) == 2

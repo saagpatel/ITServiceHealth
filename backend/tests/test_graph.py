@@ -4,7 +4,12 @@ import pytest
 
 from app.dependencies.graph import get_downstream, get_upstream
 from app.seed import DependencyTarget, load_dependencies, load_services
-from tests.test_seeder import seed_deps_with_db, seed_services_with_db
+from tests.test_seeder import (
+    _DEPENDENCIES_YAML,
+    _SERVICES_YAML,
+    seed_deps_with_db,
+    seed_services_with_db,
+)
 
 
 async def _insert_service(db, sid):
@@ -31,48 +36,50 @@ async def _insert_edge(db, upstream, downstream, severity="high"):
 
 @pytest.fixture
 async def seeded_db(db):
-    """DB with services and dependencies seeded."""
-    services = load_services()
+    """DB with services and dependencies seeded from the committed example."""
+    services = load_services(path=_SERVICES_YAML)
     await seed_services_with_db(db, services)
-    deps = load_dependencies()
+    deps = load_dependencies(path=_DEPENDENCIES_YAML)
     await seed_deps_with_db(db, deps, [s.id for s in services])
     return db
 
 
 class TestGetDownstream:
-    async def test_okta_has_12_downstream(self, seeded_db):
-        results = await get_downstream(seeded_db, "okta")
-        assert len(results) == 12
+    async def test_identity_provider_has_8_downstream(self, seeded_db):
+        results = await get_downstream(seeded_db, "identity-provider")
+        assert len(results) == 8
 
-    async def test_okta_downstream_includes_box(self, seeded_db):
-        results = await get_downstream(seeded_db, "okta")
+    async def test_idp_downstream_includes_known(self, seeded_db):
+        results = await get_downstream(seeded_db, "identity-provider")
         ids = [r["service_id"] for r in results]
-        assert "box" in ids
-        assert "slack" in ids
-        assert "zoom" in ids
+        assert "github" in ids
+        assert "dropbox" in ids
+        assert "ticketing" in ids
 
     async def test_downstream_ordered_by_severity(self, seeded_db):
-        results = await get_downstream(seeded_db, "okta")
+        results = await get_downstream(seeded_db, "identity-provider")
         severities = [r["severity"] for r in results]
         # Assert at least one 'critical' row exists before locating its last index.
         # This test protects against regressions in the SEVERITY ORDER BY sort:
         # if a non-critical entry sneaks between two critical entries we'd
         # catch it via `last_critical < first_high` below.
         assert "critical" in severities
-        last_critical = len(severities) - 1 - next(
-            i for i, s in enumerate(reversed(severities)) if s == "critical"
+        last_critical = (
+            len(severities)
+            - 1
+            - next(i for i, s in enumerate(reversed(severities)) if s == "critical")
         )
         first_high = next((i for i, s in enumerate(severities) if s == "high"), len(severities))
         assert last_critical < first_high or first_high == len(severities)
 
     async def test_downstream_includes_current_status(self, seeded_db):
-        results = await get_downstream(seeded_db, "okta")
+        results = await get_downstream(seeded_db, "identity-provider")
         for r in results:
             assert "current_status" in r
             assert r["current_status"] is not None
 
     async def test_no_downstream(self, seeded_db):
-        results = await get_downstream(seeded_db, "coupa")
+        results = await get_downstream(seeded_db, "npm")
         assert results == []
 
     async def test_nonexistent_service(self, seeded_db):
@@ -81,18 +88,18 @@ class TestGetDownstream:
 
 
 class TestGetUpstream:
-    async def test_box_upstream_includes_okta(self, seeded_db):
-        results = await get_upstream(seeded_db, "box")
+    async def test_github_upstream_includes_idp(self, seeded_db):
+        results = await get_upstream(seeded_db, "github")
         ids = [r["service_id"] for r in results]
-        assert "okta" in ids
+        assert "identity-provider" in ids
 
-    async def test_okta_upstream_includes_duo(self, seeded_db):
-        results = await get_upstream(seeded_db, "okta")
+    async def test_github_upstream_includes_cloudflare(self, seeded_db):
+        results = await get_upstream(seeded_db, "github")
         ids = [r["service_id"] for r in results]
-        assert "duo" in ids
+        assert "cloudflare" in ids
 
     async def test_no_upstream(self, seeded_db):
-        results = await get_upstream(seeded_db, "duo")
+        results = await get_upstream(seeded_db, "identity-provider")
         assert results == []
 
 
@@ -142,12 +149,15 @@ class TestCycleHandling:
         the guard is about orphan references, not acyclicity. Document
         this by asserting it doesn't throw."""
         import yaml
-        cycle_yaml = yaml.safe_dump({
-            "dependencies": {
-                "a": [{"service": "b", "impact": "x", "severity": "high"}],
-                "b": [{"service": "a", "impact": "x", "severity": "high"}],
-            },
-        })
+
+        cycle_yaml = yaml.safe_dump(
+            {
+                "dependencies": {
+                    "a": [{"service": "b", "impact": "x", "severity": "high"}],
+                    "b": [{"service": "a", "impact": "x", "severity": "high"}],
+                },
+            }
+        )
         path = tmp_path / "cycle_deps.yaml"
         path.write_text(cycle_yaml)
         deps = load_dependencies(path=path, known_service_ids={"a", "b"})

@@ -17,11 +17,16 @@ async def seeded_app(tmp_path):
     db_path = str(tmp_path / "test.db")
     conn = await init_db(db_path)
 
-    services = load_services()
-    from tests.test_seeder import seed_deps_with_db, seed_services_with_db
+    from tests.test_seeder import (
+        _DEPENDENCIES_YAML,
+        _SERVICES_YAML,
+        seed_deps_with_db,
+        seed_services_with_db,
+    )
 
+    services = load_services(path=_SERVICES_YAML)
     await seed_services_with_db(conn, services)
-    deps = load_dependencies(known_service_ids={s.id for s in services})
+    deps = load_dependencies(path=_DEPENDENCIES_YAML, known_service_ids={s.id for s in services})
     await seed_deps_with_db(conn, deps, [s.id for s in services])
 
     from app.main import app
@@ -79,7 +84,7 @@ class TestServicesListShape:
 
 class TestServiceDetailShape:
     async def test_detail_includes_pending_status_fields(self, client):
-        resp = await client.get("/api/services/okta")
+        resp = await client.get("/api/services/identity-provider")
         assert resp.status_code == 200
         body = resp.json()
         svc = body["data"]["service"]

@@ -80,11 +80,25 @@ async def slash_app(tmp_path, monkeypatch):
     conn = await init_db(db_path)
 
     services = [
-        ("okta", "Okta", "identity", "critical", "operational", "healthy"),
-        ("zoom", "Zoom", "collaboration", "important", "degraded", "healthy"),
-        ("jira_sm", "Jira Service Management", "itsm", "important", "operational", "healthy"),
-        ("slack_api", "Slack API", "collaboration", "critical", "operational", "healthy"),
-        ("slack_bot", "Slack Bot", "collaboration", "important", "operational", "healthy"),
+        (
+            "identity-provider",
+            "Identity Provider",
+            "identity",
+            "critical",
+            "operational",
+            "healthy",
+        ),
+        (
+            "video-conferencing",
+            "Video Conferencing",
+            "collaboration",
+            "important",
+            "degraded",
+            "healthy",
+        ),
+        ("ticketing", "Ticketing", "itsm", "important", "operational", "healthy"),
+        ("chat-platform", "Chat Platform", "collaboration", "critical", "operational", "healthy"),
+        ("chat-bot", "Chat Bot", "collaboration", "important", "operational", "healthy"),
         ("broken_svc", "Broken Service", "other", "low", "operational", "broken"),
     ]
 
@@ -125,7 +139,7 @@ async def slash_client(slash_app):
 
 async def test_missing_signature_header(slash_client):
     client, _ = slash_client
-    body = _form_body_for_slash({"command": "/itstatus", "text": "okta"})
+    body = _form_body_for_slash({"command": "/itstatus", "text": "identity-provider"})
     ts = _ts_now()
     resp = await client.post(
         "/api/slack/slash",
@@ -144,7 +158,7 @@ async def test_missing_signature_header(slash_client):
 
 async def test_bad_signature(slash_client):
     client, _ = slash_client
-    body = _form_body_for_slash({"command": "/itstatus", "text": "okta"})
+    body = _form_body_for_slash({"command": "/itstatus", "text": "identity-provider"})
     resp = await client.post(
         "/api/slack/slash",
         content=body,
@@ -158,7 +172,7 @@ async def test_bad_signature(slash_client):
 
 async def test_stale_timestamp(slash_client):
     client, _ = slash_client
-    body = _form_body_for_slash({"command": "/itstatus", "text": "okta"})
+    body = _form_body_for_slash({"command": "/itstatus", "text": "identity-provider"})
     resp = await client.post(
         "/api/slack/slash",
         content=body,
@@ -179,11 +193,9 @@ async def test_feature_disabled(tmp_path, monkeypatch):
 
     from app.main import app
 
-    body = _form_body_for_slash({"command": "/itstatus", "text": "okta"})
+    body = _form_body_for_slash({"command": "/itstatus", "text": "identity-provider"})
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/api/slack/slash",
             content=body,
@@ -207,13 +219,11 @@ async def test_signing_secret_unset(tmp_path, monkeypatch):
 
     from app.main import app
 
-    body = _form_body_for_slash({"command": "/itstatus", "text": "okta"})
+    body = _form_body_for_slash({"command": "/itstatus", "text": "identity-provider"})
     ts = _ts_now()
     sig = _slack_sign(body, SIGNING_SECRET, ts)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/api/slack/slash",
             content=body,
@@ -234,20 +244,14 @@ async def test_signing_secret_unset(tmp_path, monkeypatch):
 
 async def test_exact_id_match(slash_client):
     client, _ = slash_client
-    body = _form_body_for_slash({"command": "/itstatus", "text": "okta"})
-    resp = await client.post(
-        "/api/slack/slash", content=body, headers=_headers(body)
-    )
+    body = _form_body_for_slash({"command": "/itstatus", "text": "identity-provider"})
+    resp = await client.post("/api/slack/slash", content=body, headers=_headers(body))
     assert resp.status_code == 200
     data = resp.json()
     assert data["response_type"] == "ephemeral"
     # Header block should contain the display name
-    header_texts = [
-        b["text"]["text"]
-        for b in data["blocks"]
-        if b.get("type") == "header"
-    ]
-    assert any("Okta" in t for t in header_texts)
+    header_texts = [b["text"]["text"] for b in data["blocks"] if b.get("type") == "header"]
+    assert any("Identity Provider" in t for t in header_texts)
     # Status is operational → green check emoji
     assert "✅" in data["text"] or "Operational" in data["text"]
 
@@ -257,55 +261,41 @@ async def test_exact_id_match(slash_client):
 
 async def test_case_insensitive_display_name_match(slash_client):
     client, _ = slash_client
-    body = _form_body_for_slash({"command": "/itstatus", "text": "Okta"})
-    resp = await client.post(
-        "/api/slack/slash", content=body, headers=_headers(body)
-    )
+    body = _form_body_for_slash({"command": "/itstatus", "text": "Identity Provider"})
+    resp = await client.post("/api/slack/slash", content=body, headers=_headers(body))
     assert resp.status_code == 200
     data = resp.json()
-    header_texts = [
-        b["text"]["text"]
-        for b in data["blocks"]
-        if b.get("type") == "header"
-    ]
-    assert any("Okta" in t for t in header_texts)
+    header_texts = [b["text"]["text"] for b in data["blocks"] if b.get("type") == "header"]
+    assert any("Identity Provider" in t for t in header_texts)
 
 
 # ── 8. Unique substring match → found ─────────────────────────────────────────
 
 
 async def test_substring_match_unique(slash_client):
-    """'jir' matches only 'Jira Service Management' — unique → found."""
+    """'ticket' matches only 'Ticketing' — unique → found."""
     client, _ = slash_client
-    body = _form_body_for_slash({"command": "/itstatus", "text": "jir"})
-    resp = await client.post(
-        "/api/slack/slash", content=body, headers=_headers(body)
-    )
+    body = _form_body_for_slash({"command": "/itstatus", "text": "ticket"})
+    resp = await client.post("/api/slack/slash", content=body, headers=_headers(body))
     assert resp.status_code == 200
     data = resp.json()
-    header_texts = [
-        b["text"]["text"]
-        for b in data["blocks"]
-        if b.get("type") == "header"
-    ]
-    assert any("Jira" in t for t in header_texts)
+    header_texts = [b["text"]["text"] for b in data["blocks"] if b.get("type") == "header"]
+    assert any("Ticketing" in t for t in header_texts)
 
 
 # ── 9. Ambiguous substring → disambiguation text ──────────────────────────────
 
 
 async def test_substring_match_ambiguous(slash_client):
-    """'slac' matches both 'Slack API' and 'Slack Bot' but neither id exactly."""
+    """'chat' matches both 'Chat Platform' and 'Chat Bot' but neither id exactly."""
     client, _ = slash_client
-    body = _form_body_for_slash({"command": "/itstatus", "text": "slac"})
-    resp = await client.post(
-        "/api/slack/slash", content=body, headers=_headers(body)
-    )
+    body = _form_body_for_slash({"command": "/itstatus", "text": "chat"})
+    resp = await client.post("/api/slack/slash", content=body, headers=_headers(body))
     assert resp.status_code == 200
     data = resp.json()
     text = data["text"]
     # Must mention both candidates
-    assert "Slack API" in text or "Slack Bot" in text
+    assert "Chat Platform" in text or "Chat Bot" in text
     assert "more specific" in text or "Multiple" in text
 
 
@@ -315,9 +305,7 @@ async def test_substring_match_ambiguous(slash_client):
 async def test_no_match(slash_client):
     client, _ = slash_client
     body = _form_body_for_slash({"command": "/itstatus", "text": "notaservice"})
-    resp = await client.post(
-        "/api/slack/slash", content=body, headers=_headers(body)
-    )
+    resp = await client.post("/api/slack/slash", content=body, headers=_headers(body))
     assert resp.status_code == 200
     data = resp.json()
     assert "No service matches" in data["text"]
@@ -330,9 +318,7 @@ async def test_no_match(slash_client):
 async def test_empty_text(slash_client):
     client, _ = slash_client
     body = _form_body_for_slash({"command": "/itstatus", "text": ""})
-    resp = await client.post(
-        "/api/slack/slash", content=body, headers=_headers(body)
-    )
+    resp = await client.post("/api/slack/slash", content=body, headers=_headers(body))
     assert resp.status_code == 200
     data = resp.json()
     assert "Usage" in data["text"]
@@ -346,9 +332,7 @@ async def test_poller_broken_surfaces_as_unknown(slash_client):
     client, _ = slash_client
     # broken_svc has current_status=operational but poller_health=broken
     body = _form_body_for_slash({"command": "/itstatus", "text": "broken_svc"})
-    resp = await client.post(
-        "/api/slack/slash", content=body, headers=_headers(body)
-    )
+    resp = await client.post("/api/slack/slash", content=body, headers=_headers(body))
     assert resp.status_code == 200
     data = resp.json()
     # Should show Unknown, not Operational
@@ -365,9 +349,7 @@ async def test_wrong_command(slash_client):
     """Slack expects 200 even for unrecognised command names."""
     client, _ = slash_client
     body = _form_body_for_slash({"command": "/something-else", "text": ""})
-    resp = await client.post(
-        "/api/slack/slash", content=body, headers=_headers(body)
-    )
+    resp = await client.post("/api/slack/slash", content=body, headers=_headers(body))
     assert resp.status_code == 200
     data = resp.json()
     assert "Unknown slash command" in data["text"]
