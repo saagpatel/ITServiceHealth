@@ -6,7 +6,7 @@
 # Replicate: litestream replicate -config deploy/litestream.yml
 #
 # The replicate command is a long-running process — run it as a dedicated
-# launchd daemon (see com.box.it-health-dashboard-litestream.plist.example)
+# launchd daemon (see com.company.it-health-dashboard-litestream.plist.example)
 # so it stays up alongside the main app.
 #
 # Copy this file to deploy/litestream.yml and fill in the `replicas`
@@ -29,7 +29,7 @@ dbs:
       # the launchd plist) — never hardcode credentials in this file.
       #
       # - type: s3
-      #   bucket: box-it-health-backups
+      #   bucket: example-it-health-backups
       #   path: dashboards/it-health.db
       #   region: us-west-2
       #   retention: 720h                # 30 days
@@ -37,7 +37,7 @@ dbs:
 
       # ─── SFTP (alternative when S3 isn't an option) ────────────────
       # - type: sftp
-      #   host: backup-host.corp
+      #   host: backup-host.example.com
       #   user: backups
       #   path: /backups/it-health.db
       #   key-path: /Users/it-health/.ssh/litestream

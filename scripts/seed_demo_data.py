@@ -37,81 +37,190 @@ def days_ago(days, hour=10, minute=0):
 
 
 # Each incident is a list of (service_id, display_name, prev_status, new_status, detail, timestamp, demo_id)
+# Service ids match the committed example registry in config/services.yaml.
 DEMO_INCIDENTS = [
-    # 1. Okta degraded — 5 days ago, 4 hours
+    # 1. Identity provider degraded — 5 days ago, 4 hours
     [
-        ("okta", "Okta", "operational", "degraded",
-         "Increased SSO login latency affecting some users",
-         days_ago(5, 10, 0), "demo-1a"),
-        ("okta", "Okta", "degraded", "operational",
-         None,
-         days_ago(5, 14, 0), "demo-1b"),
+        (
+            "identity-provider",
+            "Identity Provider (SSO)",
+            "operational",
+            "degraded",
+            "Increased SSO login latency affecting some users",
+            days_ago(5, 10, 0),
+            "demo-1a",
+        ),
+        (
+            "identity-provider",
+            "Identity Provider (SSO)",
+            "degraded",
+            "operational",
+            None,
+            days_ago(5, 14, 0),
+            "demo-1b",
+        ),
     ],
-    # 2. Slack partial outage — 4 days ago, 2 hours
+    # 2. Discord partial outage — 4 days ago, 2 hours
     [
-        ("slack", "Slack", "operational", "partial_outage",
-         "Some users experiencing message delivery delays",
-         days_ago(4, 14, 30), "demo-2a"),
-        ("slack", "Slack", "partial_outage", "degraded",
-         "Issue identified, implementing fix",
-         days_ago(4, 15, 15), "demo-2b"),
-        ("slack", "Slack", "degraded", "operational",
-         None,
-         days_ago(4, 16, 30), "demo-2c"),
+        (
+            "discord",
+            "Discord",
+            "operational",
+            "partial_outage",
+            "Some users experiencing message delivery delays",
+            days_ago(4, 14, 30),
+            "demo-2a",
+        ),
+        (
+            "discord",
+            "Discord",
+            "partial_outage",
+            "degraded",
+            "Issue identified, implementing fix",
+            days_ago(4, 15, 15),
+            "demo-2b",
+        ),
+        (
+            "discord",
+            "Discord",
+            "degraded",
+            "operational",
+            None,
+            days_ago(4, 16, 30),
+            "demo-2c",
+        ),
     ],
-    # 3. Box major outage — 6 days ago, 30 min
+    # 3. Dropbox major outage — 6 days ago, 30 min
     [
-        ("box", "Box", "operational", "major_outage",
-         "File upload and download unavailable",
-         days_ago(6, 11, 0), "demo-3a"),
-        ("box", "Box", "major_outage", "partial_outage",
-         "Service partially restored, some operations slow",
-         days_ago(6, 11, 15), "demo-3b"),
-        ("box", "Box", "partial_outage", "operational",
-         None,
-         days_ago(6, 11, 30), "demo-3c"),
+        (
+            "dropbox",
+            "Dropbox",
+            "operational",
+            "major_outage",
+            "File upload and download unavailable",
+            days_ago(6, 11, 0),
+            "demo-3a",
+        ),
+        (
+            "dropbox",
+            "Dropbox",
+            "major_outage",
+            "partial_outage",
+            "Service partially restored, some operations slow",
+            days_ago(6, 11, 15),
+            "demo-3b",
+        ),
+        (
+            "dropbox",
+            "Dropbox",
+            "partial_outage",
+            "operational",
+            None,
+            days_ago(6, 11, 30),
+            "demo-3c",
+        ),
     ],
-    # 4. Zoom degraded — 2 days ago, 1 hour
+    # 4. Datadog degraded — 2 days ago, 1 hour
     [
-        ("zoom", "Zoom", "operational", "degraded",
-         "Intermittent audio quality issues in meetings",
-         days_ago(2, 9, 0), "demo-4a"),
-        ("zoom", "Zoom", "degraded", "operational",
-         None,
-         days_ago(2, 10, 0), "demo-4b"),
+        (
+            "datadog",
+            "Datadog",
+            "operational",
+            "degraded",
+            "Delayed metric ingestion and dashboard updates",
+            days_ago(2, 9, 0),
+            "demo-4a",
+        ),
+        (
+            "datadog",
+            "Datadog",
+            "degraded",
+            "operational",
+            None,
+            days_ago(2, 10, 0),
+            "demo-4b",
+        ),
     ],
-    # 5. Jira degraded — 1 day ago, 3 hours
+    # 5. Ticketing degraded — 1 day ago, 3 hours
     [
-        ("jira", "Jira", "operational", "degraded",
-         "Slow page loads and search timeouts",
-         days_ago(1, 15, 0), "demo-5a"),
-        ("jira", "Jira", "degraded", "operational",
-         None,
-         days_ago(1, 18, 0), "demo-5b"),
+        (
+            "ticketing",
+            "Ticketing / ITSM",
+            "operational",
+            "degraded",
+            "Slow page loads and search timeouts",
+            days_ago(1, 15, 0),
+            "demo-5a",
+        ),
+        (
+            "ticketing",
+            "Ticketing / ITSM",
+            "degraded",
+            "operational",
+            None,
+            days_ago(1, 18, 0),
+            "demo-5b",
+        ),
     ],
-    # 6. Google Mail degraded — 3 days ago, 1 hour
+    # 6. GitHub degraded — 3 days ago, 1 hour
     [
-        ("google-mail", "Google Mail", "operational", "degraded",
-         "Email delivery delays of 5-10 minutes",
-         days_ago(3, 8, 0), "demo-6a"),
-        ("google-mail", "Google Mail", "degraded", "operational",
-         None,
-         days_ago(3, 9, 0), "demo-6b"),
+        (
+            "github",
+            "GitHub",
+            "operational",
+            "degraded",
+            "Elevated API error rates and delayed Actions runs",
+            days_ago(3, 8, 0),
+            "demo-6a",
+        ),
+        (
+            "github",
+            "GitHub",
+            "degraded",
+            "operational",
+            None,
+            days_ago(3, 9, 0),
+            "demo-6b",
+        ),
     ],
-    # 7. Duo + Okta cascading — 4 days ago, 45 min
+    # 7. Cloudflare + identity provider cascading — 4 days ago, 45 min
     [
-        ("duo", "Duo Security", "operational", "degraded",
-         "MFA push notifications delayed by 30-60 seconds",
-         days_ago(4, 16, 0), "demo-7a"),
-        ("okta", "Okta", "operational", "degraded",
-         "SSO logins slow due to MFA delays (Duo upstream issue)",
-         days_ago(4, 16, 10), "demo-7b"),
-        ("okta", "Okta", "degraded", "operational",
-         None,
-         days_ago(4, 16, 45), "demo-7c"),
-        ("duo", "Duo Security", "degraded", "operational",
-         None,
-         days_ago(4, 16, 45), "demo-7d"),
+        (
+            "cloudflare",
+            "Cloudflare",
+            "operational",
+            "degraded",
+            "Elevated edge latency in some regions",
+            days_ago(4, 16, 0),
+            "demo-7a",
+        ),
+        (
+            "identity-provider",
+            "Identity Provider (SSO)",
+            "operational",
+            "degraded",
+            "SSO logins slow due to upstream edge latency",
+            days_ago(4, 16, 10),
+            "demo-7b",
+        ),
+        (
+            "identity-provider",
+            "Identity Provider (SSO)",
+            "degraded",
+            "operational",
+            None,
+            days_ago(4, 16, 45),
+            "demo-7c",
+        ),
+        (
+            "cloudflare",
+            "Cloudflare",
+            "degraded",
+            "operational",
+            None,
+            days_ago(4, 16, 45),
+            "demo-7d",
+        ),
     ],
 ]
 
@@ -127,7 +236,13 @@ async def seed_demo_data(db=None):
         db = await init_db()
 
         # Ensure services are seeded (idempotent)
-        from app.seed import load_dependencies, load_services, seed_dependencies, seed_services
+        from app.seed import (
+            load_dependencies,
+            load_services,
+            seed_dependencies,
+            seed_services,
+        )
+
         services = load_services()
         await seed_services(services)
         deps = load_dependencies()
@@ -144,13 +259,23 @@ async def seed_demo_data(db=None):
         )
         existing = (await cursor.fetchone())[0]
         if existing > 0:
-            await conn.execute("DELETE FROM status_events WHERE vendor_incident_id LIKE 'demo-%'")
+            await conn.execute(
+                "DELETE FROM status_events WHERE vendor_incident_id LIKE 'demo-%'"
+            )
             await conn.commit()
             logger.info("Cleared %d existing demo events", existing)
 
     total = 0
     for incident_group in DEMO_INCIDENTS:
-        for service_id, display_name, prev, new, detail, timestamp, demo_id in incident_group:
+        for (
+            service_id,
+            display_name,
+            prev,
+            new,
+            detail,
+            timestamp,
+            demo_id,
+        ) in incident_group:
             # Generate impact statement
             change = StatusChange(
                 service_id=service_id,
@@ -179,7 +304,9 @@ async def seed_demo_data(db=None):
     async with write_lock:
         await conn.commit()
 
-    logger.info("Seeded %d demo events across %d incident scenarios", total, len(DEMO_INCIDENTS))
+    logger.info(
+        "Seeded %d demo events across %d incident scenarios", total, len(DEMO_INCIDENTS)
+    )
 
     # Verify
     cursor = await conn.execute(
