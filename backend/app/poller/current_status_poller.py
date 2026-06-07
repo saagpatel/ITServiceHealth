@@ -1,9 +1,9 @@
-"""Slack Status API poller.
+"""Current-status API poller.
 
-Fetches current status from slack-status.com/api/v2.0.0/current
-and returns normalized status data.
+Fetches the current status from a JSON status endpoint and returns
+normalized status data.
 
-The Slack API can return two formats:
+The endpoint can return two formats:
 - Dict: the normal /current response with {status, active_incidents, ...}
 - List: a redirect to the history endpoint returning incident objects.
   Each incident has {id, status, type, title, ...} where status is
@@ -15,14 +15,14 @@ import logging
 
 import httpx
 
-from app.poller.normalizer import ServiceStatus, normalize_slack_status
+from app.poller.normalizer import ServiceStatus, normalize_current_status
 from app.poller.resilience import describe_fetch_error, resilient_fetch
 from app.poller.statuspage_poller import PollResult
 
 logger = logging.getLogger(__name__)
 
-# Slack incident type → severity rank (higher = worse)
-_SLACK_TYPE_RANK = {
+# Incident type → severity mapping (higher = worse)
+_STATUS_TYPE_RANK = {
     "outage": ServiceStatus.MAJOR_OUTAGE,
     "incident": ServiceStatus.PARTIAL_OUTAGE,
     "notice": ServiceStatus.DEGRADED,
@@ -30,30 +30,32 @@ _SLACK_TYPE_RANK = {
 }
 
 
-async def poll_slack(
+async def poll_current_status(
     client: httpx.AsyncClient,
     poll_url: str,
 ) -> PollResult:
-    """Poll the Slack Status API.
+    """Poll a current-status JSON endpoint.
 
     Args:
         client: Shared httpx AsyncClient.
-        poll_url: Slack status API URL.
+        poll_url: Status API URL.
 
     Returns:
         PollResult with normalized status.
     """
     try:
         # resilient_fetch handles retries + per-host breaker. The explicit
-        # Accept header is from the origin branch so slack-status.com
-        # returns JSON not HTML when redirects land us on a different doc.
+        # Accept header ensures the endpoint returns JSON rather than HTML
+        # when redirects land on a different document.
         response = await resilient_fetch(
-            client, poll_url, headers={"Accept": "application/json"},
+            client,
+            poll_url,
+            headers={"Accept": "application/json"},
         )
         data = response.json()
     except Exception as e:
         detail, reason = describe_fetch_error(e)
-        logger.warning("Slack poll failed: %s (%s)", detail, reason)
+        logger.warning("Current-status poll failed: %s (%s)", detail, reason)
         return PollResult(
             status=ServiceStatus.UNKNOWN,
             status_detail=detail,
@@ -62,7 +64,7 @@ async def poll_slack(
 
     # Normal dict response — use the existing normalizer
     if isinstance(data, dict):
-        status = normalize_slack_status(data)
+        status = normalize_current_status(data)
         status_detail = None
         active = data.get("active_incidents", [])
         if active and isinstance(active[0], dict):
@@ -70,7 +72,7 @@ async def poll_slack(
         return PollResult(
             status=status,
             status_detail=status_detail,
-            page_name="Slack",
+            page_name="Current Status",
             incidents=active,
             scheduled_maintenances=[],
         )
@@ -79,15 +81,14 @@ async def poll_slack(
     # with a "status" field (active/resolved/etc) and "type" (outage/incident/etc).
     if isinstance(data, list):
         active_incidents = [
-            item for item in data
-            if isinstance(item, dict) and item.get("status") == "active"
+            item for item in data if isinstance(item, dict) and item.get("status") == "active"
         ]
 
         if not active_incidents:
             return PollResult(
                 status=ServiceStatus.OPERATIONAL,
                 status_detail=None,
-                page_name="Slack",
+                page_name="Current Status",
                 incidents=[],
                 scheduled_maintenances=[],
             )
@@ -99,7 +100,7 @@ async def poll_slack(
 
         for inc in active_incidents:
             inc_type = inc.get("type", "")
-            mapped = _SLACK_TYPE_RANK.get(inc_type, ServiceStatus.DEGRADED)
+            mapped = _STATUS_TYPE_RANK.get(inc_type, ServiceStatus.DEGRADED)
             if severity_rank.get(mapped.value, 0) > severity_rank.get(worst.value, 0):
                 worst = mapped
                 worst_title = inc.get("title")
@@ -108,18 +109,20 @@ async def poll_slack(
             worst_title = active_incidents[0].get("title")
 
         logger.info(
-            "Slack API returned history list (%d items, %d active) — status: %s",
-            len(data), len(active_incidents), worst.value,
+            "Current-status API returned history list (%d items, %d active) — status: %s",
+            len(data),
+            len(active_incidents),
+            worst.value,
         )
 
         return PollResult(
             status=worst,
             status_detail=worst_title,
-            page_name="Slack",
+            page_name="Current Status",
             incidents=active_incidents,
             scheduled_maintenances=[],
         )
 
     # Unexpected type
-    logger.warning("Slack API returned unexpected type: %s", type(data).__name__)
+    logger.warning("Current-status API returned unexpected type: %s", type(data).__name__)
     return PollResult(status=ServiceStatus.UNKNOWN, status_detail="Unexpected response format")

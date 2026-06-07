@@ -1,7 +1,8 @@
-"""Salesforce Trust API poller.
+"""Trust incidents API poller.
 
-Fetches active incidents from api.status.salesforce.com/v1/incidents
-and maps to our status model.
+Fetches active incidents from a trust/incidents JSON endpoint and maps
+to our status model. The endpoint returns a list of incident objects;
+entries without a resolved timestamp are considered active.
 """
 
 import logging
@@ -15,13 +16,13 @@ from app.poller.statuspage_poller import PollResult
 logger = logging.getLogger(__name__)
 
 
-async def poll_salesforce(
+async def poll_trust_incidents(
     client: httpx.AsyncClient,
     poll_url: str,
 ) -> PollResult:
-    """Poll the Salesforce Trust API for active incidents.
+    """Poll a trust-incidents JSON endpoint for active incidents.
 
-    The API returns a list of incident objects. If any are active
+    The endpoint returns a list of incident objects. If any are active
     (no resolvedAt), the service is degraded/outaged.
     """
     try:
@@ -29,7 +30,7 @@ async def poll_salesforce(
         incidents = response.json()
     except Exception as e:
         detail, reason = describe_fetch_error(e)
-        logger.warning("Salesforce poll failed: %s (%s)", detail, reason)
+        logger.warning("Trust-incidents poll failed: %s (%s)", detail, reason)
         return PollResult(
             status=ServiceStatus.UNKNOWN,
             status_detail=detail,
@@ -37,7 +38,7 @@ async def poll_salesforce(
         )
 
     if not isinstance(incidents, list):
-        return PollResult(status=ServiceStatus.OPERATIONAL, page_name="Salesforce")
+        return PollResult(status=ServiceStatus.OPERATIONAL, page_name="Trust Incidents")
 
     # Filter to active incidents (those without a resolved timestamp)
     active = [inc for inc in incidents if not inc.get("isResolved", True)]
@@ -45,7 +46,7 @@ async def poll_salesforce(
     if not active:
         return PollResult(
             status=ServiceStatus.OPERATIONAL,
-            page_name="Salesforce",
+            page_name="Trust Incidents",
             incidents=[],
         )
 
@@ -72,6 +73,6 @@ async def poll_salesforce(
     return PollResult(
         status=severity,
         status_detail=status_detail,
-        page_name="Salesforce",
+        page_name="Trust Incidents",
         incidents=active,
     )

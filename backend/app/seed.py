@@ -42,13 +42,28 @@ def _expand_env_var(value: str | None) -> str | None:
 
 
 VALID_CATEGORIES = Literal[
-    "identity", "productivity", "collaboration", "engineering",
-    "hr", "finance", "sales", "marketing", "networking", "support", "other",
+    "identity",
+    "productivity",
+    "collaboration",
+    "engineering",
+    "hr",
+    "finance",
+    "sales",
+    "marketing",
+    "networking",
+    "support",
+    "other",
 ]
 
 VALID_POLL_TYPES = Literal[
-    "statuspage_json", "google_json", "slack_api", "rss", "manual",
-    "salesforce_trust", "zendesk_api", "ringcentral_api",
+    "statuspage_json",
+    "product_feed_json",
+    "current_status_api",
+    "rss",
+    "manual",
+    "trust_incidents_api",
+    "active_incidents_api",
+    "service_array_json",
 ]
 
 VALID_TIERS = Literal["critical", "important", "informational"]
@@ -106,9 +121,7 @@ def load_services(path: Path | None = None) -> list[ServiceConfig]:
             errors.append(f"  Service #{i + 1} ({raw.get('id', '?')}): {e}")
 
     if errors:
-        raise ValueError(
-            f"Validation failed for {len(errors)} service(s):\n" + "\n".join(errors)
-        )
+        raise ValueError(f"Validation failed for {len(errors)} service(s):\n" + "\n".join(errors))
 
     return services
 
@@ -138,9 +151,7 @@ def load_dependencies(
         errors: list[str] = []
         for upstream, targets in deps.items():
             if upstream not in known_service_ids:
-                errors.append(
-                    f"  Unknown upstream service '{upstream}' (not in services.yaml)"
-                )
+                errors.append(f"  Unknown upstream service '{upstream}' (not in services.yaml)")
             for target in targets:
                 if target.service == "all_internal":
                     continue
@@ -218,9 +229,7 @@ async def seed_dependencies(
             for target in targets:
                 # Expand "all_internal" to all services except the upstream itself
                 if target.service == "all_internal":
-                    downstream_ids = [
-                        sid for sid in all_service_ids if sid != upstream
-                    ]
+                    downstream_ids = [sid for sid in all_service_ids if sid != upstream]
                 else:
                     downstream_ids = [target.service]
 

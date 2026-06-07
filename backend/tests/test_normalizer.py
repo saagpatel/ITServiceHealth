@@ -1,17 +1,18 @@
-"""Tests for status normalizer — all vendor mappings + edge cases."""
+"""Tests for status normalizer — all format mappings + edge cases."""
 
 import pytest
 
 from app.poller.normalizer import (
     ServiceStatus,
-    normalize_google_status,
+    normalize_current_status,
+    normalize_product_feed_status,
     normalize_rss_title,
-    normalize_slack_status,
     normalize_statuspage_component,
     normalize_statuspage_indicator,
 )
 
 # ── Statuspage.io Component Status ──────────────────────────────────
+
 
 class TestStatuspageComponent:
     @pytest.mark.parametrize(
@@ -43,6 +44,7 @@ class TestStatuspageComponent:
 
 # ── Statuspage.io Page-Level Indicator ──────────────────────────────
 
+
 class TestStatuspageIndicator:
     @pytest.mark.parametrize(
         "indicator,expected",
@@ -67,16 +69,17 @@ class TestStatuspageIndicator:
         assert normalize_statuspage_indicator("Critical") == ServiceStatus.MAJOR_OUTAGE
 
 
-# ── Slack Status API ───────────────────────────────────────────────
+# ── Current Status API ────────────────────────────────────────────
 
-class TestSlackStatus:
+
+class TestCurrentStatus:
     def test_ok_no_incidents(self):
         response = {"status": "ok", "active_incidents": []}
-        assert normalize_slack_status(response) == ServiceStatus.OPERATIONAL
+        assert normalize_current_status(response) == ServiceStatus.OPERATIONAL
 
     def test_ok_missing_incidents_key(self):
         response = {"status": "ok"}
-        assert normalize_slack_status(response) == ServiceStatus.OPERATIONAL
+        assert normalize_current_status(response) == ServiceStatus.OPERATIONAL
 
     def test_outage_incident(self):
         response = {
@@ -85,7 +88,7 @@ class TestSlackStatus:
                 {"type": "outage", "title": "Major outage"},
             ],
         }
-        assert normalize_slack_status(response) == ServiceStatus.MAJOR_OUTAGE
+        assert normalize_current_status(response) == ServiceStatus.MAJOR_OUTAGE
 
     def test_incident_type(self):
         response = {
@@ -94,7 +97,7 @@ class TestSlackStatus:
                 {"type": "incident", "title": "Some users affected"},
             ],
         }
-        assert normalize_slack_status(response) == ServiceStatus.PARTIAL_OUTAGE
+        assert normalize_current_status(response) == ServiceStatus.PARTIAL_OUTAGE
 
     def test_notice_type(self):
         response = {
@@ -103,7 +106,7 @@ class TestSlackStatus:
                 {"type": "notice", "title": "Planned maintenance"},
             ],
         }
-        assert normalize_slack_status(response) == ServiceStatus.DEGRADED
+        assert normalize_current_status(response) == ServiceStatus.DEGRADED
 
     def test_maintenance_type(self):
         response = {
@@ -112,7 +115,7 @@ class TestSlackStatus:
                 {"type": "maintenance", "title": "Scheduled maintenance"},
             ],
         }
-        assert normalize_slack_status(response) == ServiceStatus.DEGRADED
+        assert normalize_current_status(response) == ServiceStatus.DEGRADED
 
     def test_multiple_incidents_most_severe_wins(self):
         response = {
@@ -123,7 +126,7 @@ class TestSlackStatus:
                 {"type": "incident", "title": "Some issue"},
             ],
         }
-        assert normalize_slack_status(response) == ServiceStatus.MAJOR_OUTAGE
+        assert normalize_current_status(response) == ServiceStatus.MAJOR_OUTAGE
 
     def test_unknown_incident_type(self):
         response = {
@@ -132,18 +135,19 @@ class TestSlackStatus:
                 {"type": "something_new", "title": "Unknown type"},
             ],
         }
-        assert normalize_slack_status(response) == ServiceStatus.DEGRADED
+        assert normalize_current_status(response) == ServiceStatus.DEGRADED
 
     def test_non_ok_no_incidents(self):
         response = {"status": "active", "active_incidents": []}
-        assert normalize_slack_status(response) == ServiceStatus.DEGRADED
+        assert normalize_current_status(response) == ServiceStatus.DEGRADED
 
 
-# ── Google Workspace ───────────────────────────────────────────────
+# ── Product Feed ──────────────────────────────────────────────────
 
-class TestGoogleStatus:
+
+class TestProductFeedStatus:
     def test_no_incidents_operational(self):
-        assert normalize_google_status([], "google-mail") == ServiceStatus.OPERATIONAL
+        assert normalize_product_feed_status([], "google-mail") == ServiceStatus.OPERATIONAL
 
     def test_active_incident_for_product(self):
         incidents = [
@@ -152,7 +156,9 @@ class TestGoogleStatus:
                 "most_recent_update": {"status": "SERVICE_DISRUPTION"},
             },
         ]
-        assert normalize_google_status(incidents, "google-mail") == ServiceStatus.PARTIAL_OUTAGE
+        assert (
+            normalize_product_feed_status(incidents, "google-mail") == ServiceStatus.PARTIAL_OUTAGE
+        )
 
     def test_active_outage_for_product(self):
         incidents = [
@@ -161,7 +167,7 @@ class TestGoogleStatus:
                 "most_recent_update": {"status": "SERVICE_OUTAGE"},
             },
         ]
-        assert normalize_google_status(incidents, "google-mail") == ServiceStatus.MAJOR_OUTAGE
+        assert normalize_product_feed_status(incidents, "google-mail") == ServiceStatus.MAJOR_OUTAGE
 
     def test_resolved_incident_is_operational(self):
         incidents = [
@@ -171,7 +177,7 @@ class TestGoogleStatus:
                 "most_recent_update": {"status": "SERVICE_DISRUPTION"},
             },
         ]
-        assert normalize_google_status(incidents, "google-mail") == ServiceStatus.OPERATIONAL
+        assert normalize_product_feed_status(incidents, "google-mail") == ServiceStatus.OPERATIONAL
 
     def test_incident_for_different_product(self):
         incidents = [
@@ -180,7 +186,7 @@ class TestGoogleStatus:
                 "most_recent_update": {"status": "SERVICE_OUTAGE"},
             },
         ]
-        assert normalize_google_status(incidents, "google-mail") == ServiceStatus.OPERATIONAL
+        assert normalize_product_feed_status(incidents, "google-mail") == ServiceStatus.OPERATIONAL
 
     def test_calendar_product(self):
         incidents = [
@@ -189,13 +195,14 @@ class TestGoogleStatus:
                 "most_recent_update": {"status": "degraded"},
             },
         ]
-        assert normalize_google_status(incidents, "google-calendar") == ServiceStatus.DEGRADED
+        assert normalize_product_feed_status(incidents, "google-calendar") == ServiceStatus.DEGRADED
 
     def test_unknown_service_id(self):
-        assert normalize_google_status([], "google-drive") == ServiceStatus.UNKNOWN
+        assert normalize_product_feed_status([], "google-drive") == ServiceStatus.UNKNOWN
 
 
 # ── RSS Feed ──────────────────────────────────────────────────────
+
 
 class TestRSSTitle:
     @pytest.mark.parametrize(
