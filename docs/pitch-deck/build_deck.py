@@ -403,7 +403,7 @@ def slide_what():
         ),
         (
             "v2 · phase 5-6",
-            "TanStack-style polling · Executive/Engineer toggle · PWA · a11y · CI · Caddy · Keychain",
+            "TanStack-style polling · Executive/Engineer toggle · PWA · a11y · CI · reverse proxy · OS-backed secrets",
         ),
     ]
     row_h = Inches(0.72)

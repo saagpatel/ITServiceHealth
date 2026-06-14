@@ -152,7 +152,7 @@ Project uses JSX + JSDoc, not TypeScript. Provide JSDoc typedefs at the top of `
 
 | Service | Endpoint | Method | Auth | Rate Limit | Pagination | Purpose |
 |---------|----------|--------|------|------------|------------|---------|
-| Pulse backend | `/api/summary` | GET | none (internal network boundary) | n/a — local | none | overall_status, active_incidents[], counts |
+| Pulse backend | `/api/summary` | GET | private access controls | n/a — local | none | overall_status, active_incidents[], counts |
 | Pulse backend | `/api/services` | GET | none | n/a — local | none | per-service status, poller_health, category |
 | Pulse backend | `/api/services/sla` | GET | none | n/a — local | none | uptime_24h / uptime_7d / uptime_30d per service |
 | Pulse backend | `/api/services/sla/history?days=30` | GET | none | n/a — local | none | daily uptime points per service, 30-day window |
@@ -183,7 +183,7 @@ Expected (already installed): `recharts@^3.8.1`, `lucide-react@^1.8.0`, `@tailwi
 
 **Out of scope:**
 - Engineer view (`ServiceGrid`, `ServiceDetail`, `DependencyGraph`, `Timeline`, `ServiceTile`)
-- Backend endpoints, pollers, alerting, observability, SQLite, launchd, Caddy, Litestream
+- Backend endpoints, pollers, alerting, observability, SQLite, service supervision, reverse proxy, Litestream
 - `ViewContext` itself — reused as-is
 - PWA manifest, service worker, reload prompt
 - Any work gated behind `WEBHOOKS_ENABLED` or `SLACK_ACK_ENABLED`
@@ -195,9 +195,9 @@ Expected (already installed): `recharts@^3.8.1`, `lucide-react@^1.8.0`, `@tailwi
 
 ## Security & Credentials
 
-- Credential storage: not applicable — all endpoints are read-only and the internal network is the security boundary per root `CLAUDE.md`.
+- Credential storage: not applicable for this read-only view; private access controls are covered by the root `CLAUDE.md`.
 - Data boundaries: nothing leaves the browser except the existing same-origin XHRs.
-- Encryption: n/a — same-origin HTTPS once Caddy terminates TLS in production; not a concern for this feature.
+- Encryption: n/a — same-origin HTTPS once the reverse proxy terminates TLS in production; not a concern for this feature.
 - Token rotation: n/a — no admin endpoints touched.
 
 ---

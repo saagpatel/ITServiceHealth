@@ -5,8 +5,8 @@ Real-time status monitoring dashboard for ~30 SaaS services used across an enter
 ## Project status
 
 - **v1 (demo-ready) — SHIPPED.** All original spec delivered: polling, normalization, change detection, Slack alerting, React UI, dependency graph, timeline, SLA tracking, incident clustering, auto reports.
-- **v2 (production-ready) — SHIPPED.** Phases 0–6 of the production roadmap complete: bearer-token auth, vendor resilience (stamina + purgatory), alert quality (flap suppression, dedup, tier routing, dependency correlation, maintenance windows, flapping-badge UI), observability (structlog, Prometheus `/metrics`, Sentry, Healthchecks.io dead-man's switch), data lifecycle (production pragmas, retention, Litestream streaming + daily `VACUUM INTO` snapshot), UX productionization (severity-sorted grid, distinct poller-broken state, a11y + keyboard nav, Executive/Engineer view toggle, PWA, `recharts` SLA trend), and platform polish (CI, pre-commit, hardened launchd plist, Caddy, Keychain secrets). **378 tests passing.**
-- **v2 Phase 2B + Phase 7 — in tree, gated off.** Statuspage inbound webhook receiver (`WEBHOOKS_ENABLED`), Slack ack flow (`SLACK_ACK_ENABLED`), postmortem drafts (`POSTMORTEMS_ENABLED`), SLO fuel-gauge + multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped with tests but default off. Flip each flag once its prerequisites are in place (public endpoint for Slack features; postmortems need only a writable `POSTMORTEMS_DIR`).
+- **v2 (production-ready) — SHIPPED.** Phases 0–6 of the production roadmap complete: bearer-token auth, vendor resilience (stamina + purgatory), alert quality (flap suppression, dedup, tier routing, dependency correlation, maintenance windows, flapping-badge UI), observability (structlog, Prometheus `/metrics`, Sentry, Healthchecks.io dead-man's switch), data lifecycle (production pragmas, retention, Litestream streaming + daily `VACUUM INTO` snapshot), UX productionization (severity-sorted grid, distinct poller-broken state, a11y + keyboard nav, Executive/Engineer view toggle, PWA, `recharts` SLA trend), and platform polish (CI, pre-commit, service supervision, reverse-proxy posture, OS-backed secret storage). **378 tests passing.**
+- **v2 Phase 2B + Phase 7 — in tree, gated off.** Statuspage inbound webhook receiver (`WEBHOOKS_ENABLED`), Slack ack flow (`SLACK_ACK_ENABLED`), postmortem drafts (`POSTMORTEMS_ENABLED`), SLO fuel-gauge + multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped with tests but default off. Flip each flag only after the deployment has the required signed callback reachability; postmortems need only a writable `POSTMORTEMS_DIR`.
 - **v2 Phase 7 remainder — optional.** LLM-layer impact statements; log-aggregation / ITSM / synthetic-monitoring integrations. Not on a fixed schedule; add as demand emerges.
 
 **Active roadmap:** [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md) — exit-criteria detail for every phase.
@@ -60,13 +60,11 @@ Open `http://localhost:8000` in your browser.
 
 ## Accessing the Dashboard
 
-The dashboard runs on a Mac Mini on the internal network. Access it at:
-
-```
-http://<host>:8000
-```
-
-No authentication required — internal-network access is the security boundary.
+For local development, open `http://localhost:8000` after starting the backend.
+For a private deployment, serve the read dashboard behind your organization's
+normal access controls and keep admin writes protected by bearer-token auth. The
+public repo intentionally describes the deployment shape, not a real host,
+machine, or network boundary.
 
 ## Service Categories
 
@@ -96,7 +94,7 @@ finance, sales, marketing, networking, support).
 For services without automated polling (e.g. an identity provider, an HR system, or any service with no public status API), update status via curl. **Admin endpoints require a bearer token** (set `ADMIN_API_TOKEN` in your env).
 
 ```bash
-export TOKEN="your-admin-token"
+export TOKEN="<demo-admin-token>"
 
 # Set a service to degraded
 curl -X POST http://localhost:8000/api/admin/status \
@@ -126,7 +124,7 @@ Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`, `un
 | `SLACK_WEBHOOK_URL` | _(none)_ | Slack incoming webhook URL for ops-alert channel notifications |
 | `DATABASE_PATH` | `data.db` | SQLite database file path |
 | `POLL_INTERVAL_SECONDS` | `60` | How often to poll vendor status pages (1–3600) |
-| `HOST` | `127.0.0.1` | Server bind address (`0.0.0.0` for network access) |
+| `HOST` | `127.0.0.1` | Server bind address; override only for a controlled private deployment |
 | `PORT` | `8000` | Server port |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `ADMIN_API_TOKEN` | _(none)_ | Bearer token required for `/api/admin/*` endpoints. If unset, admin endpoints refuse all requests. |
@@ -190,85 +188,39 @@ cd frontend && npm run dev
 
 Frontend dev server at `localhost:5173` proxies `/api/*` to `localhost:8000`.
 
-## Production Deployment (Mac Mini)
+## Private Deployment Notes
 
-```bash
-# 1. Clone and set up (same as Quick Start steps 1-4)
+The production path is intentionally self-hosted and private-network oriented:
 
-# 2. Configure environment
-cp .env.example backend/.env
-# Edit backend/.env: set HOST=0.0.0.0, SLACK_WEBHOOK_URL=<your-url>
+- Run the FastAPI process under an OS service manager.
+- Put a reverse proxy in front for TLS and request headers.
+- Store tokens and webhook secrets in the host secret manager, not in git.
+- Keep read access behind the organization access controls.
+- Require bearer-token auth for every admin/write endpoint.
+- Monitor `/api/health`, `/healthz`, `/metrics`, and the heartbeat job.
 
-# 3. Update plist paths
-# Edit com.company.it-health-dashboard.plist:
-#   - Replace /path/to/ with actual project path
-#   - Add SLACK_WEBHOOK_URL
-
-# 4. Install launchd service
-sudo cp com.company.it-health-dashboard.plist /Library/LaunchDaemons/
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.company.it-health-dashboard.plist
-
-# 5. Verify
-curl http://localhost:8000/api/health
-
-# 6. Open firewall (if needed)
-sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add $(which python3)
-```
-
-Manage the service:
-```bash
-# Stop
-sudo launchctl bootout system/com.company.it-health-dashboard
-
-# Start
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.company.it-health-dashboard.plist
-
-# View logs
-tail -f /var/log/it-health-dashboard.log
-```
+Exact host paths, service-manager commands, firewall posture, and log locations
+belong in a private runbook, not in the public README.
 
 ## Backup & Disaster Recovery (Litestream)
 
-SQLite is the primary store; [Litestream](https://litestream.io) streams WAL frames to an external replica (S3, SFTP, or a second disk) so the dashboard survives a Mac Mini failure.
+SQLite is the primary store; [Litestream](https://litestream.io) streams WAL
+frames to an external replica so the dashboard can recover from host failure.
 
 ### Setup
 
-```bash
-# 1. Install the binary
-brew install benbjohnson/litestream/litestream
+Use the checked-in config template as a starting point, keep the real replica
+destination out of git, validate the config before enabling the sidecar, and
+monitor snapshots as part of routine operations.
 
-# 2. Customize the config template (pick one replica destination)
-cp deploy/litestream.yml.example /opt/it-health/deploy/litestream.yml
-$EDITOR /opt/it-health/deploy/litestream.yml
-
-# 3. Validate the config before loading it
-litestream validate -config /opt/it-health/deploy/litestream.yml
-
-# 4. Install the sidecar launchd daemon
-cp deploy/com.company.it-health-dashboard-litestream.plist.example \
-   /Library/LaunchDaemons/com.company.it-health-dashboard-litestream.plist
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.company.it-health-dashboard-litestream.plist
-
-# 5. Confirm replication is working
-litestream snapshots -config /opt/it-health/deploy/litestream.yml
-```
-
-Litestream RPO is ~1 second — after the initial snapshot, every WAL frame ships as it's written.
+Litestream RPO is ~1 second — after the initial snapshot, every WAL frame ships as it is written.
 
 ### Restore
 
-```bash
-# 1. Stop the main app so the DB isn't being written to
-sudo launchctl bootout system/com.company.it-health-dashboard
-
-# 2. Restore from replica (picks up the latest snapshot + WAL frames)
-litestream restore -config /opt/it-health/deploy/litestream.yml \
-                   -o /opt/it-health/data.db \
-                   /opt/it-health/data.db
-
-# 3. Start the app — it applies pending migrations on boot and resumes polling
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.company.it-health-dashboard.plist
-```
+Restore procedure: stop writers, restore the latest snapshot plus WAL frames
+into the configured database location, restart the service, and let startup
+migrations run. Keep the exact command sequence in a private runbook because it
+depends on the host service manager, paths, and replica destination.
 
 ### Data retention
 
@@ -297,7 +249,7 @@ The retention job runs every `RETENTION_INTERVAL_HOURS` (default 168 = weekly) a
 | `/api/services/graph` | GET | Service dependency graph (nodes + links) for visualization |
 | `/api/services/slo` | GET | Per-service SLO snapshot: error-budget remaining + active burn-rate breaches |
 | `/api/admin/status` | POST | Manual status update (requires `Authorization: Bearer $ADMIN_API_TOKEN`) |
-| `/healthz` | GET | Dead-man's switch — 200 fresh / 503 stale. Hit by launchd + Healthchecks.io. |
+| `/healthz` | GET | Dead-man's switch — 200 fresh / 503 stale. Hit by the service supervisor + Healthchecks.io. |
 | `/metrics` | GET | Prometheus text exposition. |
 | `/api/webhooks/statuspage/{id}` | POST | Inbound Statuspage subscriber webhook, HMAC-verified. 404 unless `WEBHOOKS_ENABLED=true`. |
 | `/api/slack/interactivity` | POST | Slack block-actions receiver (ack button). 404 unless `SLACK_ACK_ENABLED=true`. |

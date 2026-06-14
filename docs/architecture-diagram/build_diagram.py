@@ -434,10 +434,10 @@ text(
     ha="center",
 )
 edge_lines = [
-    "Caddy · HTTPS + header auth",
-    "internal-network-only read path",
+    "reverse proxy · HTTPS + header auth",
+    "private read path",
     "Bearer-token write path",
-    "launchd · Mac Mini 24/7",
+    "private self-hosted runtime",
 ]
 for i, line in enumerate(edge_lines):
     text(edge_x + 1.0, 25.2 - i * 1.4, line, size=6.8, color=TEXT_SECONDARY)

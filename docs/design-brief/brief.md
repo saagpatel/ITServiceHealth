@@ -2,7 +2,7 @@
 
 ## What Pulse is
 
-An internal status dashboard that aggregates real-time health of ~30 SaaS services used by Enterprise IT (identity, collaboration, productivity, CRM, video, telephony, and ITSM tools). Polls vendor status endpoints every 60 seconds, detects state changes, fires Slack alerts, renders a unified board with timeline + dependency graph + SLA history. Served from a Mac Mini on the internal network at `http://<host>:8000`.
+A private status dashboard that aggregates real-time health of ~30 SaaS services used by Enterprise IT (identity, collaboration, productivity, CRM, video, telephony, and ITSM tools). Polls vendor status endpoints every 60 seconds, detects state changes, fires Slack alerts, renders a unified board with timeline + dependency graph + SLA history. Designed for self-hosted private deployment rather than a public SaaS surface.
 
 ## Who uses it
 
@@ -91,7 +91,7 @@ Claude Design should produce proposals for each:
 ## Tech constraints for the handoff
 
 - **React 19 + Vite + Tailwind 4** — Tailwind is v4 syntax (`@theme`, not `tailwind.config.js`). Handoff CSS variables map cleanly to `@theme` tokens.
-- **IBM Plex via `@fontsource`** self-hosted — no CDN fonts (deploy is internal-network-only). If the new typography is a commercial/Google font, we need a self-hostable equivalent or a Fontsource package.
+- **IBM Plex via `@fontsource`** self-hosted — no CDN fonts (deploy is private/self-hosted). If the new typography is a commercial/Google font, we need a self-hostable equivalent or a Fontsource package.
 - **Lucide icons** — easy to keep or swap.
 - **`recharts`** for SLA trend — any chart restyling should fit inside recharts' props, not require migration.
 - **No new component framework** — we're not adopting shadcn/ui or MUI just for this refresh. Tailwind + plain React components only.

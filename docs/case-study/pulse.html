@@ -521,8 +521,8 @@
       <dt>Phase 6 · Platform polish</dt>
       <dd>
         GitHub Actions CI with <code>ruff</code> and <code>mypy
-        --strict</code>, a hardened launchd plist, Caddy in front for
-        HTTPS plus header auth, and Keychain for secrets on the Mac
+        --strict</code>, hardened service supervision, a reverse proxy in front for
+        HTTPS plus header auth, and OS-backed secret storage
         Mini it runs on.
       </dd>
     </div>
@@ -693,7 +693,7 @@
   <p>
     The ack flow lives behind a feature flag: off by default because
     it requires a public reachability path for Slack's interactivity
-    endpoint, which the internal-network-only deployment does not yet provide. The
+    endpoint, which the private deployment does not yet provide. The
     code is in the tree; the HMAC verification is implemented; the
     tests pass; the switch flips when the network path does.
   </p>
@@ -741,7 +741,7 @@
     every thirty seconds. If the beats stop, an external observer
     notices — even if the dashboard's own monitoring has broken. The
     <code>/healthz</code> endpoint returns 503 if the last heartbeat
-    was more than a hundred and twenty seconds ago, so launchd and
+    was more than a hundred and twenty seconds ago, so service supervision and
     any external liveness probe agree on what "alive" means.
   </p>
 
