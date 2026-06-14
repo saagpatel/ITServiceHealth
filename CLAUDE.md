@@ -1,6 +1,6 @@
 # IT Service Health Dashboard
 
-Internal web dashboard aggregating real-time health of ~30 SaaS services in an enterprise IT environment. Polls Statuspage.io JSON API, a cloud productivity suite's JSON feed, a chat vendor's native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view, posts alerts to Slack. Deployed on a Mac Mini on the internal network.
+Private web dashboard aggregating real-time health of ~30 SaaS services in an enterprise IT environment. Polls Statuspage.io JSON API, a cloud productivity suite's JSON feed, a chat vendor's native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view and posts alerts to Slack. Designed for self-hosted, private-network deployment.
 
 ## Roadmap
 
@@ -14,7 +14,7 @@ Historical v1 spec: [IMPLEMENTATION-ROADMAP.md](./IMPLEMENTATION-ROADMAP.md) —
 - **Frontend:** React 19 (Vite 8+) + Tailwind CSS 4+; FastAPI serves the built static files
 - **Observability:** structlog (JSON), prometheus-client, sentry-sdk[fastapi], Healthchecks.io
 - **Resilience:** stamina (retries) + purgatory (per-host circuit breakers)
-- **Production process manager:** launchd (macOS); Caddy in front for HTTPS + header auth
+- **Production process manager:** OS service manager; reverse proxy in front for HTTPS + header auth
 
 ## Build / Test / Run
 
@@ -58,14 +58,14 @@ Open `http://localhost:8000`.
 | Cloud productivity suite | Custom JSON feed + RSS | Has its own status dashboard, not Statuspage.io |
 | Chat vendor status | Vendor JSON status endpoint | Dedicated JSON status API |
 | Database | SQLite + Litestream | Demo-scale + ~1s RPO; Postgres deferred to >100 writes/s |
-| Auth | Bearer token on admin endpoints; internal-network-only for reads | Bearer token required for write endpoints — the internal network alone is insufficient |
-| Hosting | Mac Mini + Caddy | Always-on, internal-network-accessible; Caddy adds HTTPS + header auth |
+| Auth | Bearer token on admin endpoints; private access controls for reads | Bearer token required for write endpoints — read-path access controls alone are insufficient |
+| Hosting | Self-hosted private deployment | Always-on private access; reverse proxy adds HTTPS + header auth |
 | Dep graph layout | Force-directed (react-force-graph-2d) | Dagre hierarchical layout is deferred; force-directed is current default |
 | LLM layer | Deferred (post-Phase-7) | Template-based summaries sufficient for v2 |
 
 ## Feature Gates (off by default)
 
-Phase 7 code is in-tree but gated. Flip only when a public endpoint (Cloudflare Tunnel / Caddy allowlist / ngrok) is available:
+Phase 7 code is in-tree but gated. Flip only when a signed callback endpoint is available:
 
 - `WEBHOOKS_ENABLED` — `POST /api/webhooks/statuspage/{service_id}` (HMAC-SHA256; `backend/app/router_webhooks.py`). Bypasses flap suppression; writes directly through the alerting pipeline.
 - `SLACK_ACK_ENABLED` — `POST /api/slack/interactivity` (v0 signing-secret; `backend/app/router_slack.py`).
@@ -84,7 +84,7 @@ All new work must map to an active phase in PRODUCTION-ROADMAP.md. Splunk, Thous
 
 ## What This Project Is
 
-Internal web dashboard that aggregates real-time health status of ~30 SaaS services supported by an enterprise IT team. Polls vendor status pages via Statuspage.io JSON API, a cloud productivity suite's JSON feed, a chat vendor's native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view and posts alerts to Slack. Deployed on a Mac Mini on the internal network. Designed for IT engineers (deep triage) and IT leadership / company-wide visibility (situational awareness).
+Private web dashboard that aggregates real-time health status of ~30 SaaS services supported by an enterprise IT team. Polls vendor status pages via Statuspage.io JSON API, a cloud productivity suite's JSON feed, a chat vendor's native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view and posts alerts to Slack. Designed for self-hosted private deployment and for IT engineers (deep triage) plus IT leadership / company-wide visibility (situational awareness).
 
 ## Current State
 
@@ -99,7 +99,7 @@ Main also includes a parallel UX sprint that shipped alongside Phase 5:
 **Phase 7 partially landed:**
 - **Statuspage inbound webhook** (`POST /api/webhooks/statuspage/{service_id}`, HMAC-SHA256, optional replay protection) — code in `backend/app/router_webhooks.py`, gated by `WEBHOOKS_ENABLED` (default false). Writes directly through the alerting pipeline, bypassing flap suppression.
 - **Slack ack flow** (`POST /api/slack/interactivity`, v0 signing-secret) — code in `backend/app/router_slack.py`, gated by `SLACK_ACK_ENABLED` (default false). Block Kit messages only include the Acknowledge button when the flag is true.
-- Both features require a public endpoint (Cloudflare Tunnel / Caddy allowlist / ngrok) before flipping the flag. They ship off-by-default so the main app is unaffected.
+- Both features require a signed callback endpoint before flipping the flag. They ship off-by-default so the main app is unaffected.
 
 **Phase 7 further landed** — postmortem automation (`POSTMORTEMS_ENABLED`), SLO fuel-gauge view + multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped, feature-gated off by default. **Still open:** LLM-layer impact statements, Splunk/JSM/ThousandEyes integration.
 
@@ -115,7 +115,7 @@ Main also includes a parallel UX sprint that shipped alongside Phase 5:
 - **Config:** PyYAML 6.0+
 - **Data validation:** Pydantic 2.10+
 - **Frontend:** React 19 (Vite 8+) + Tailwind CSS 4+
-- **Process manager:** launchd (macOS) for production
+- **Process manager:** OS service manager for production
 
 ## How To Run
 
@@ -144,7 +144,7 @@ Open `http://localhost:8000` in your browser.
 - Do not start work that isn't in a PRODUCTION-ROADMAP.md phase. If it doesn't fit, discuss first.
 - Do not integrate Splunk, ThousandEyes, Datadog, or JSM — those are Phase 7+.
 - Do not build an LLM integration yet — post-Phase-7.
-- Do not remove the bearer-token auth on admin endpoints once added. The internal network is not sufficient for write endpoints.
+- Do not remove the bearer-token auth on admin endpoints once added. Read-path access controls are not sufficient for write endpoints.
 - Do not use synchronous I/O — all network calls must be async.
 - Do not hardcode service definitions in Python — they live in services.yaml.
 - Do not use slack-sdk — use raw httpx POST for webhook simplicity.

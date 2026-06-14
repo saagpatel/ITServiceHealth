@@ -45,7 +45,7 @@ Only `origin` (`saagpatel/ITServiceHealth`). Clean migration state.
     maintenance windows, observability (structlog + Prometheus
     `/metrics` + Sentry + Healthchecks.io dead-man's switch),
     Litestream streaming + daily `VACUUM INTO` snapshot, PWA,
-    hardened launchd plist, Caddy reverse proxy, Keychain secrets
+    hardened service supervision, reverse proxy posture, OS-backed secrets
 - **356 tests passing**
 - `PRODUCTION-ROADMAP.md` + `IMPLEMENTATION-ROADMAP.md` on
   canonical main
@@ -73,7 +73,7 @@ automation + SLO views + multi-burn-rate alerting + Slack slash
 command + per-service webhook overrides all shipped in the last
 6 merges). **356 tests passing.** Phase 2B + Phase 7 webhooks
 (Statuspage inbound + Slack ack) are gated off pending a public
-reachability path (Cloudflare Tunnel / Caddy allowlist).
+signed callback reachability path.
 
 ---
 
@@ -81,14 +81,14 @@ reachability path (Cloudflare Tunnel / Caddy allowlist).
 
 Joins **self-hosted service cluster** as the second member.
 RedditSentimentAnalyzer (R10) founded the cluster with personal
-self-hosted infrastructure (launchd + nginx). ITServiceHealth
+self-hosted infrastructure. ITServiceHealth
 extends:
 
 | Aspect | RedditSentimentAnalyzer | **ITServiceHealth** |
 |---|---|---|
 | Audience | Operator-personal | **Operator's employer (enterprise IT)** |
-| Reachability | launchd + nginx | **launchd + Caddy + Cloudflare Tunnel (planned)** |
-| Secrets | Standard | **macOS Keychain** |
+| Reachability | Private deployment | **signed callback path (planned)** |
+| Secrets | Standard | **OS-backed secret storage** |
 | Observability | Basic | **structlog + Prometheus `/metrics` + Sentry + Healthchecks.io dead-man's switch** |
 | Data lifecycle | Standard SQLite | **Litestream streaming + daily VACUUM INTO snapshot** |
 | Alerting | Reddit polling | **5-state vendor polling + Slack Block Kit + dependency-graph impact statements** |
@@ -130,8 +130,8 @@ Operational concerns:
 
 1. **Phase 2B + Phase 7 webhooks reachability** — Statuspage
    inbound webhook receiver + Slack ack flow shipped with HMAC
-   verification but gated off. Flip when Cloudflare Tunnel or
-   Caddy allowlist is in place.
+   verification but gated off. Flip when signed callback
+   reachability is in place.
 2. **Phase 7 remainder polish** — postmortem variants, SLO views,
    multi-burn-rate alerting all shipped; remainder is operator-
    cadence demand-driven.
@@ -141,10 +141,10 @@ Operational concerns:
    Healthchecks.io dead-man's switch catches silent breakage.
 4. **Litestream snapshot verification** — daily `VACUUM INTO`
    provides recovery; verify restore path periodically.
-5. **Keychain secret rotation** — bearer tokens + Slack
-   credentials + Sentry DSN + vendor API keys all in Keychain;
+5. **Secret rotation** — bearer tokens + Slack
+   credentials + Sentry DSN + vendor API keys all in OS-backed storage;
    document rotation cadence.
-6. **launchd plist hardening + Caddy config** verification on
+6. **Service supervision + reverse proxy config** verification on
    major macOS updates.
 
 No public unblock — this serves the operator's employer
@@ -158,13 +158,13 @@ internally.
 |---|---|
 | Portfolio status | `Active (self-hosted service, corporate-context)` |
 | Audience | **Enterprise IT** (operator's employer) |
-| Distribution model | **Self-hosted on operator infrastructure** (launchd + Caddy + Cloudflare Tunnel) |
+| Distribution model | **Self-hosted on operator infrastructure** with signed callback reachability planned |
 | Review cadence | Active — Phase 7 polish + Phase 2B gating + operational maintenance |
-| Resurface conditions | (a) Phase 2B webhook gating decision, (b) vendor API breakage, (c) macOS update breaks launchd or Caddy, (d) Keychain secret rotation cadence, (e) v3 scope packet |
+| Resurface conditions | (a) Phase 2B webhook gating decision, (b) vendor API breakage, (c) OS/runtime drift breaks service supervision or reverse proxy, (d) secret rotation cadence, (e) v3 scope packet |
 | Co-batch with | Self-hosted service cluster — **now 2 repos** (personal + corporate-context) |
 | Sub-shape | **Corporate-context self-hosted service** (new) |
 | Special concern | **Vendor status API breakage monitoring.** Healthchecks.io dead-man's switch is the load-bearing observability layer. |
-| Special concern | **Phase 2B webhook reachability** — gated off until Cloudflare Tunnel or Caddy allowlist in place. |
+| Special concern | **Phase 2B webhook reachability** — gated off until signed callback reachability is in place. |
 | Special concern | **Litestream + VACUUM INTO snapshot** — verify restore path periodically. |
 | Special concern | **Corporate context** — operator's employer relies on this; ship discipline higher than personal projects. |
 
@@ -176,7 +176,7 @@ internally.
 2. Working tree clean — no stash needed.
 3. **Re-read `PRODUCTION-ROADMAP.md`** for current Phase 7 state.
 4. Run `pytest` — expect 356 tests passing.
-5. Verify launchd plist + Caddy config still functional.
+5. Verify service supervision + reverse proxy config still functional.
 6. Verify Healthchecks.io dead-man's switch is being pinged.
 7. Check Litestream stream + most recent daily snapshot.
 8. Verify vendor status API integrations (Statuspage / chat platform /
@@ -191,7 +191,7 @@ internally.
 | `origin/main` tip | `cc15c9a` perf(logging): offload file I/O to QueueListener thread (#28) |
 | Last substantive feat | `4932246` feat(alerting): vendor_incident_id extraction + per-service webhook override (#27) |
 | Default branch | `main` |
-| Build system | Python + FastAPI + SQLite + React + Caddy reverse proxy + launchd + macOS Keychain |
+| Build system | Python + FastAPI + SQLite + React + reverse proxy + service supervision + OS-backed secrets |
 | Service count | ~30 SaaS services monitored |
 | Test count | **356 tests passing** |
 | Audience | **Enterprise IT (operator's employer)** — corporate-context self-hosted |
@@ -200,4 +200,4 @@ internally.
 | Data lifecycle | Litestream streaming + daily `VACUUM INTO` snapshot |
 | Active arc | Phase 7 polish + Phase 2B webhook gating |
 | Migration state | No `legacy-origin` remote |
-| Distinguishing feature | **Second self-hosted service cluster member; introduces corporate-context sub-shape.** Substantially more operational maturity than RedditSentimentAnalyzer (Keychain + Litestream + Caddy + observability stack). Active Phase 7 cadence. |
+| Distinguishing feature | **Second self-hosted service cluster member; introduces corporate-context sub-shape.** Substantially more operational maturity than RedditSentimentAnalyzer (OS-backed secrets + Litestream + reverse proxy + observability stack). Active Phase 7 cadence. |
