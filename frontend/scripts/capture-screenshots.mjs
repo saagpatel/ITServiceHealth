@@ -1,4 +1,3 @@
-import puppeteer from "puppeteer-core";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,11 +9,31 @@ const OUT_DIR = path.resolve(
   "../docs/executive-view-redesign/screenshots",
 );
 
+const allowed =
+  process.argv.includes("--allow-local-browser") ||
+  process.env.ITSH_ALLOW_SCREENSHOTS === "1";
+
+if (!allowed) {
+  console.error(
+    "Refusing local screenshot capture without explicit opt-in. " +
+      "Pass --allow-local-browser or set ITSH_ALLOW_SCREENSHOTS=1.",
+  );
+  process.exit(2);
+}
+
+const { default: puppeteer } = await import("puppeteer-core");
+
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: "new",
   defaultViewport: { width: 1920, height: 1080, deviceScaleFactor: 2 },
-  args: ["--disable-web-security", "--no-sandbox"],
+  args: [
+    "--disable-web-security",
+    "--no-sandbox",
+    "--disable-gpu",
+    "--disable-dev-shm-usage",
+    ...(process.platform === "darwin" ? ["--disable-features=Metal"] : []),
+  ],
 });
 
 async function captureOperational() {
