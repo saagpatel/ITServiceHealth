@@ -13,7 +13,7 @@ Both captured at 3840×4232 (1920-wide viewport × 2 DPR × full-page scroll).
 # one-time, while the dev stack is up on :5173 + :8000
 cd frontend
 npm install --no-save --legacy-peer-deps puppeteer-core
-node scripts/capture-screenshots.mjs
+node scripts/capture-screenshots.mjs --allow-local-browser
 ```
 
 Output lands in `docs/executive-view-redesign/screenshots/`.
