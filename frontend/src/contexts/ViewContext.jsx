@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
+import { ViewContext } from "./view-context";
 
-const ViewContext = createContext();
 const STORAGE_KEY = "pulse-view-mode";
 
 export function ViewProvider({ children }) {
@@ -25,10 +25,4 @@ export function ViewProvider({ children }) {
       {children}
     </ViewContext.Provider>
   );
-}
-
-export function useView() {
-  const ctx = useContext(ViewContext);
-  if (!ctx) throw new Error("useView must be used inside ViewProvider");
-  return ctx;
 }

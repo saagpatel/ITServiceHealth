@@ -9,15 +9,17 @@ export function usePolling(url, intervalMs = 30000) {
   const lastJsonRef = useRef(null);
   const urlRef = useRef(url);
 
-  // Reset on URL change
-  if (url !== urlRef.current) {
-    urlRef.current = url;
-    lastJsonRef.current = null;
-  }
+  useEffect(() => {
+    if (url !== urlRef.current) {
+      urlRef.current = url;
+      lastJsonRef.current = null;
+    }
+  }, [url]);
 
   const fetchData = useCallback(
     async (signal) => {
       if (!url) return;
+      setLoading((current) => (lastJsonRef.current === null ? true : current));
       try {
         const result = await get(url, signal);
         const json = JSON.stringify(result);
@@ -43,11 +45,14 @@ export function usePolling(url, intervalMs = 30000) {
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(data === null);
-    fetchData(controller.signal);
+    const runFetch = () => {
+      Promise.resolve().then(() => fetchData(controller.signal));
+    };
+
+    runFetch();
 
     const interval = setInterval(() => {
-      fetchData(controller.signal);
+      runFetch();
     }, intervalMs);
 
     return () => {

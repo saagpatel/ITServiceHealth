@@ -1,4 +1,4 @@
-import { useView } from "../contexts/ViewContext";
+import { useView } from "../contexts/use-view";
 
 const VIEWS = [
   { id: "engineer",  label: "Engineer" },

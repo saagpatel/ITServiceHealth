@@ -10,7 +10,7 @@ export default function StatusBanner({ data, loading }) {
     );
   }
 
-  const { overall_status, active_incidents, total_services = 0, healthy_count, unknown_count = 0 } = data;
+  const { overall_status, active_incidents, total_services = 0, unknown_count = 0 } = data;
   const hasIncidents = active_incidents && active_incidents.length > 0;
   const monitored = total_services - unknown_count;
   const manual = unknown_count;

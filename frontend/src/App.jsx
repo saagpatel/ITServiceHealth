@@ -7,7 +7,8 @@ import {
   STALE_WARNING_MS,
   STALE_CRITICAL_MS,
 } from "./lib/constants";
-import { ViewProvider, useView } from "./contexts/ViewContext";
+import { ViewProvider } from "./contexts/ViewContext";
+import { useView } from "./contexts/use-view";
 import StatusBanner from "./components/StatusBanner";
 import IncidentSection from "./components/IncidentSection";
 import MaintenanceBanner from "./components/MaintenanceBanner";

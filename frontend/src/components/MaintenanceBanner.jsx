@@ -8,7 +8,6 @@ export default function MaintenanceBanner({ data }) {
 
   const maintenances = data.upcoming_maintenances;
   const visible = expanded ? maintenances : maintenances.slice(0, 3);
-  const remaining = maintenances.length - 3;
 
   return (
     <div className="rounded-lg bg-bg-surface border border-border px-4 py-3">
