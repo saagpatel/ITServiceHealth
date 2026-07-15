@@ -14,7 +14,7 @@
     "@fontsource/ibm-plex-sans": "^5.2.8",
     "@tailwindcss/vite": "^4.3.2",
     "date-fns": "^4.4.0",
-    "lucide-react": "^1.21.0",
+    "lucide-react": "^1.24.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-force-graph-2d": "^1.29.1",
