@@ -5,10 +5,10 @@ Redesigns the Executive-view codepath of the IT Service Health dashboard so it r
 
 ## Tech Stack (this feature only)
 - React: 19.2 (existing)
-- Vite: 8.0 + `@tailwindcss/vite` 4.2 (existing)
-- Tailwind CSS: 4.2 — `@theme` token block in `frontend/src/styles/index.css`
-- recharts: 3.8 — already in tree for `SlaChart`; reused by the 30-day trend strip
-- lucide-react: 1.8 — icon set already in tree
+- Vite: 8.2 + `@tailwindcss/vite` 4.3 (existing)
+- Tailwind CSS: 4.3 — `@theme` token block in `frontend/src/styles/index.css`
+- recharts: 3.9 — already in tree for `SlaChart`; reused by the 30-day trend strip
+- lucide-react: 1.41 — icon set already in tree
 - No new runtime deps. Stop and escalate if a task appears to need one.
 
 ## File Conventions
@@ -21,7 +21,7 @@ Redesigns the Executive-view codepath of the IT Service Health dashboard so it r
 ## Key Decisions
 | Decision | Choice | Why |
 |----------|--------|-----|
-| Color system | High-contrast dark theme; single `--color-accent-alarm` (alarm-red) reserved for `major_outage` and `degraded` only | Conference-room legibility; one eye-magnet so red means "act now" |
+| Color system | High-contrast dark theme; single `--color-accent-alarm` (alarm-red) reserved for `major_outage`, `partial_outage`, and `degraded` | Conference-room legibility; one eye-magnet so red means "act now" |
 | Typography scale | 2× jumps: 14 / 28 / 56 / 112 px; weight contrast 400 vs 700 | Satisfies the 2×-hierarchy rule; readable at 3 m |
 | Data shape | Compose `/api/summary`, `/api/services`, `/api/services/sla`, `/api/services/sla/history?days=30` in one hook `use-executive-data.js` | Keeps components dumb; one place to memoize derived KPIs |
 | View integration | New `ExecutiveView.jsx` replaces the `CategorySummary` render branch inside `App.jsx` when `view === "executive"` | Matches existing `ViewContext` gating; no routing changes |
