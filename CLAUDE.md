@@ -1,6 +1,6 @@
 # IT Service Health Dashboard
 
-Private web dashboard aggregating real-time health of ~30 SaaS services in an enterprise IT environment. Polls Statuspage.io JSON API, a cloud productivity suite's JSON feed, a chat vendor's native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view and posts alerts to Slack. Designed for self-hosted, private-network deployment.
+Private web dashboard aggregating real-time health of SaaS services (10 in the committed example registry) in an enterprise IT environment. Polls Statuspage.io and custom JSON APIs; RSS/Atom title normalization exists, but no RSS/Atom poller is dispatched. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view and posts alerts to Slack. Designed for self-hosted, private-network deployment.
 
 ## Roadmap
 
@@ -9,8 +9,8 @@ Historical v1 spec: [IMPLEMENTATION-ROADMAP.md](./IMPLEMENTATION-ROADMAP.md) —
 
 ## Stack
 
-- **Python** 3.12+ / FastAPI 0.115+ / httpx 0.28+ / aiosqlite 0.21+ / APScheduler 3.10+
-- **Config / validation:** PyYAML 6.0+ / Pydantic 2.10+ / feedparser 6.0+
+- **Python** 3.12+ / FastAPI 0.141.1+ / httpx 0.28.1+ / aiosqlite 0.22.1+ / APScheduler 3.11.3+
+- **Config / validation:** PyYAML 6.0+ / Pydantic 2.13.5+ / feedparser 6.0.14+
 - **Frontend:** React 19 (Vite 8+) + Tailwind CSS 4+; FastAPI serves the built static files
 - **Observability:** structlog (JSON), prometheus-client, sentry-sdk[fastapi], Healthchecks.io
 - **Resilience:** stamina (retries) + purgatory (per-host circuit breakers)
@@ -27,7 +27,7 @@ pip install -r backend/requirements.txt
 cd frontend && npm install && npm run build && cd ..
 
 # (Optional) seed demo data
-cd backend && python -m scripts.seed_demo_data && cd ..
+cd backend && PYTHONPATH=.. python -m scripts.seed_demo_data && cd ..
 
 # Run — serves dashboard + API on port 8000
 cd backend && python run.py
@@ -40,7 +40,7 @@ Open `http://localhost:8000`.
 ## Conventions
 
 - **I/O:** async/await throughout; no blocking calls in async context.
-- **Config:** service definitions and dependency mappings live in `services.yaml`, never hardcoded in Python.
+- **Config:** service definitions and dependency mappings live in `backend/config/services.yaml` and `backend/config/dependencies.yaml` (with optional `.local.yaml` overrides), never hardcoded in Python.
 - **HTTP calls:** all wrapped in try/except with timeout, retry (stamina), and graceful degradation; return `unknown` status when a poller fails — not `operational`.
 - **Alerting dedup:** use `vendor_incident_id` when available, not message text.
 - **Slack integration:** raw httpx POST for webhooks (no slack-sdk); `POST /api/slack/interactivity` for ack flow.
@@ -55,22 +55,22 @@ Open `http://localhost:8000`.
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Primary data source | Statuspage.io `/api/v2/summary.json` | Most vendors use Statuspage.io; JSON, no auth, not rate-limited |
-| Cloud productivity suite | Custom JSON feed + RSS | Has its own status dashboard, not Statuspage.io |
+| Cloud productivity suite | Custom JSON feed adapter | Has its own status dashboard, not Statuspage.io |
 | Chat vendor status | Vendor JSON status endpoint | Dedicated JSON status API |
 | Database | SQLite + Litestream | Demo-scale + ~1s RPO; Postgres deferred to >100 writes/s |
-| Auth | Bearer token on admin endpoints; private access controls for reads | Bearer token required for write endpoints — read-path access controls alone are insufficient |
+| Auth | Bearer token on admin endpoints; private access controls for reads | Bearer token required for admin writes; webhook and Slack callbacks use signature verification |
 | Hosting | Self-hosted private deployment | Always-on private access; reverse proxy adds HTTPS + header auth |
 | Dep graph layout | Force-directed (react-force-graph-2d) | Dagre hierarchical layout is deferred; force-directed is current default |
 | LLM layer | Deferred (post-Phase-7) | Template-based summaries sufficient for v2 |
 
 ## Feature Gates (off by default)
 
-Phase 7 code is in-tree but gated. Flip only when a signed callback endpoint is available:
+Phase 7 code is in-tree but gated. Webhook and Slack flags require signed callback reachability; postmortems require a writable output directory, and SLO burn-rate alerting runs locally:
 
 - `WEBHOOKS_ENABLED` — `POST /api/webhooks/statuspage/{service_id}` (HMAC-SHA256; `backend/app/router_webhooks.py`). Bypasses flap suppression; writes directly through the alerting pipeline.
 - `SLACK_ACK_ENABLED` — `POST /api/slack/interactivity` (v0 signing-secret; `backend/app/router_slack.py`).
 - `POSTMORTEMS_ENABLED` — postmortem automation.
-- `SLO_BURN_RATE_ENABLED` — SLO fuel-gauge view + multi-burn-rate alerting.
+- `SLO_BURN_RATE_ENABLED` — scheduled multi-burn-rate alerting; the SLO fuel-gauge view and API are always available.
 - `SLACK_SLASH_ENABLED` — Slack `/itstatus` slash command.
 
 **Still open (Phase 7+):** LLM-layer impact statements, Splunk/JSM/ThousandEyes integration.
@@ -84,36 +84,36 @@ All new work must map to an active phase in PRODUCTION-ROADMAP.md. Splunk, Thous
 
 ## What This Project Is
 
-Private web dashboard that aggregates real-time health status of ~30 SaaS services supported by an enterprise IT team. Polls vendor status pages via Statuspage.io JSON API, a cloud productivity suite's JSON feed, a chat vendor's native status API, and RSS/Atom feeds. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view and posts alerts to Slack. Designed for self-hosted private deployment and for IT engineers (deep triage) plus IT leadership / company-wide visibility (situational awareness).
+Private web dashboard that aggregates real-time health status of SaaS services (10 in the committed example registry) supported by an enterprise IT team. Polls vendor status pages via Statuspage.io and custom JSON APIs; RSS/Atom title normalization exists, but no RSS/Atom poller is dispatched. Enriches with dependency mapping and templated impact statements. Displays a unified status board with timeline view and posts alerts to Slack. Designed for self-hosted private deployment and for IT engineers (deep triage) plus IT leadership / company-wide visibility (situational awareness).
 
 ## Current State
 
 **v2 SHIPPED — Phases 0–6 complete; Phase 2B + Phase 7 (Statuspage inbound webhook + Slack ack) in tree, gated off by default.** Auth, vendor resilience, alert quality, observability, data lifecycle, UX productionization, and platform polish all landed. **378 tests passing.** The dashboard is production-grade; a mature IT team can rely on it. See PRODUCTION-ROADMAP.md for the exit-criteria detail on each phase.
 
 Main also includes a parallel UX sprint that shipped alongside Phase 5:
-- **Executive / Engineer view toggle** — `ViewContext` gates the grid vs category summary and engineer-only affordances (graph, timeline, shortcuts).
+- **Executive / Engineer view toggle** — `ViewContext` gates the grid vs `ExecutiveView` and engineer-only affordances (graph, timeline, shortcuts).
 - **PWA** — `vite-plugin-pwa` registers a service worker with 55-entry precache; `ReloadPrompt` surfaces updates.
-- **`recharts` SLA trend** — the service-detail drawer renders 7/30-day uptime history.
-- **Daily `VACUUM INTO` backup** — `app/backup.py` writes a snapshot at `settings.backup_time_hour`, independent of Litestream.
+- **`recharts` SLA trend** — the service-detail drawer renders a 7-day uptime bar and a 30-day SLA trend.
+- **Daily `VACUUM INTO` backup** — `backend/app/backup.py` writes a snapshot at `settings.backup_time_hour`, independent of Litestream.
 
 **Phase 7 partially landed:**
 - **Statuspage inbound webhook** (`POST /api/webhooks/statuspage/{service_id}`, HMAC-SHA256, optional replay protection) — code in `backend/app/router_webhooks.py`, gated by `WEBHOOKS_ENABLED` (default false). Writes directly through the alerting pipeline, bypassing flap suppression.
 - **Slack ack flow** (`POST /api/slack/interactivity`, v0 signing-secret) — code in `backend/app/router_slack.py`, gated by `SLACK_ACK_ENABLED` (default false). Block Kit messages only include the Acknowledge button when the flag is true.
 - Both features require a signed callback endpoint before flipping the flag. They ship off-by-default so the main app is unaffected.
 
-**Phase 7 further landed** — postmortem automation (`POSTMORTEMS_ENABLED`), SLO fuel-gauge view + multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped, feature-gated off by default. **Still open:** LLM-layer impact statements, Splunk/JSM/ThousandEyes integration.
+**Phase 7 further landed** — postmortem automation (`POSTMORTEMS_ENABLED`), multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`; SLO view/API always available), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped, feature-gated off by default. **Still open:** LLM-layer impact statements, Splunk/JSM/ThousandEyes integration.
 
 ## Stack
 
 - **Python:** 3.12+
-- **Backend framework:** FastAPI 0.115+
-- **Async HTTP:** httpx 0.28+
-- **Database:** SQLite via aiosqlite 0.21+
-- **Task scheduling:** APScheduler 3.10+
-- **RSS parsing:** feedparser 6.0+
+- **Backend framework:** FastAPI 0.141.1+
+- **Async HTTP:** httpx 0.28.1+
+- **Database:** SQLite via aiosqlite 0.22.1+
+- **Task scheduling:** APScheduler 3.11.3+
+- **RSS parsing:** feedparser 6.0.14+
 - **Slack alerting:** httpx (raw webhook POST — no SDK needed)
 - **Config:** PyYAML 6.0+
-- **Data validation:** Pydantic 2.10+
+- **Data validation:** Pydantic 2.13.5+
 - **Frontend:** React 19 (Vite 8+) + Tailwind CSS 4+
 - **Process manager:** OS service manager for production
 
@@ -131,7 +131,7 @@ pip install -r backend/requirements.txt
 cd frontend && npm install && npm run build && cd ..
 
 # 4. (Optional) Seed demo data for a populated timeline
-cd backend && python -m scripts.seed_demo_data && cd ..
+cd backend && PYTHONPATH=.. python -m scripts.seed_demo_data && cd ..
 
 # 5. Run (serves dashboard + API on port 8000)
 cd backend && python run.py
@@ -146,13 +146,13 @@ Open `http://localhost:8000` in your browser.
 - Do not build an LLM integration yet — post-Phase-7.
 - Do not remove the bearer-token auth on admin endpoints once added. Read-path access controls are not sufficient for write endpoints.
 - Do not use synchronous I/O — all network calls must be async.
-- Do not hardcode service definitions in Python — they live in services.yaml.
+- Do not hardcode service definitions in Python — they live in `backend/config/services.yaml` (or its `.local.yaml` override).
 - Do not use slack-sdk — use raw httpx POST for webhook simplicity.
 - Do not parse RSS when a JSON API is available — JSON is always preferred.
 - Do not poll more frequently than every 60 seconds — courtesy limit with vendor APIs.
-- Do not render a service as `operational` when its poller has failed. Use `unknown`.
+- Do not render a service as `operational` when its poller has failed — render `unknown`. (Failed polls return `unknown`; the change detector preserves the last-known service status and records poller health separately; the UI shows a distinct broken-poller state.)
 - Do not dedup alerts on message text. Use `vendor_incident_id` when available.
-- Do not use force-directed layout as default for the dependency graph. Use hierarchical (Dagre).
+- Use the existing force-directed dependency graph (`react-force-graph-2d`); hierarchical (Dagre) layout is deferred.
 
 ## Next Recommended Move
 

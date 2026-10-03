@@ -29,7 +29,7 @@
                               /api/services/sla/history?days=30
 ```
 
-The redesign is a single new branch hanging off `ViewContext`. The existing `use-polling` hook is reused; `use-executive-data.js` is a thin composition layer that calls four `usePolling` instances and memoizes derived KPIs (incident count, degraded-vendor count, weighted SLA, sorted impact rows, normalized 30-day series).
+The redesign is a single new branch hanging off `ViewContext`. The existing `use-polling` hook is reused; `use-executive-data.js` is a thin composition layer that calls four `usePolling` instances and memoizes derived KPIs (incident count, degraded-vendor count, arithmetic-mean SLA, sorted impact rows, normalized 30-day series).
 
 ### File Structure
 
@@ -44,19 +44,19 @@ frontend/
         ExecutiveKpiTiles.jsx               (new — 3 KPI tiles row)
         ExecutiveTrendStrip.jsx             (new — 30-day uptime sparkline)
         ExecutiveImpactList.jsx             (new — sorted impact list)
-      CategorySummary.jsx                   (existing — removed from render path in Phase 2; file deleted)
+      CategorySummary.jsx                   (retired in Phase 2; file deleted)
     hooks/
       use-executive-data.js                 (new — composes /api/summary + /api/services + SLA + SLA history)
       use-polling.js                        (existing — reused, not modified)
     lib/
-      executive-tokens.js                   (new — typography + spacing constants consumed by executive components only)
-      constants.js                          (existing — extended with EXEC_SLA_TARGET, EXEC_IMPACT_LIMIT)
+      executive-tokens.js                   (new — executive SLA target, impact limit, chart colors, severity ranks, and formatting helpers)
+      constants.js                          (existing — polling and status constants)
     styles/
       index.css                             (existing — extended @theme block with alarm + display tokens)
   docs/executive-view-redesign/
     screenshots/
-      exec-operational.png                  (captured in Phase 3)
-      exec-major.png                        (captured in Phase 3)
+      exec-operational.png                  (Phase 3 capture target; not in this checkout)
+      exec-major.png                        (Phase 3 capture target; not in this checkout)
 ```
 
 ### Data Model
@@ -68,13 +68,13 @@ No database migrations. All data is read-only from existing endpoints. Derived s
 {
   // Headline
   overallStatus:    "operational" | "degraded" | "partial_outage" | "major_outage" | "unknown",
-  headline:         "All Systems Operational" | "Active Incident" | "N Active Incidents",
+  headline:         "All Systems Operational" | "Active Incident" | "N Active Incidents" | "Service Degradation",
   incidentsOpen:    number,              // active_incidents.length from /api/summary
   vendorsDegraded:  number,              // services where effectiveStatus !== "operational" && !== "unknown"
   totalMonitored:   number,              // total_services - unknown_count
   slaTarget:        number,              // EXEC_SLA_TARGET constant, default 99.9
-  slaObserved:      number,              // weighted mean of uptime_30d across services with non-null SLA
-  slaDeltaBps:      number,              // (slaObserved - slaTarget) in basis points; negative => under target
+  slaObserved:      number | null,       // arithmetic mean of uptime_30d across services with non-null SLA
+  slaDeltaBps:      number | null,       // (slaObserved - slaTarget) in basis points; negative => under target
 
   // Sorted impact list, worst first, operational services excluded
   impact: [
@@ -84,7 +84,7 @@ No database migrations. All data is read-only from existing endpoints. Derived s
       category:       string,            // category label
       status:         "degraded" | "partial_outage" | "major_outage" | "unknown",
       isPollerBroken: boolean,
-      impactLine:     string,            // templated from /api/summary active_incidents.impact, fallback to status label
+      impactLine:     string,            // templated from /api/summary active_incidents.impact_statement, fallback to status label
       sinceIso:       string | null,     // ISO timestamp when status last changed, if available
     },
     // ...
@@ -92,7 +92,7 @@ No database migrations. All data is read-only from existing endpoints. Derived s
 
   // 30-day aggregate trend: daily mean uptime across monitored services, oldest first
   trend: [
-    { date: "YYYY-MM-DD", uptimePct: number, anyDegraded: boolean },
+    { date: "YYYY-MM-DD", uptimePct: number | null, anyDegraded: boolean },
     // ... 30 entries
   ],
 
@@ -103,7 +103,7 @@ No database migrations. All data is read-only from existing endpoints. Derived s
 }
 ```
 
-All five fetches are read-only. No writes. No new tables.
+All four fetches are read-only. No writes. No new tables.
 
 ### Type Definitions
 
@@ -124,7 +124,7 @@ Project uses JSX + JSDoc, not TypeScript. Provide JSDoc typedefs at the top of `
 /**
  * @typedef {Object} TrendPoint
  * @property {string} date
- * @property {number} uptimePct
+ * @property {number|null} uptimePct
  * @property {boolean} anyDegraded
  */
 
@@ -136,8 +136,8 @@ Project uses JSX + JSDoc, not TypeScript. Provide JSDoc typedefs at the top of `
  * @property {number} vendorsDegraded
  * @property {number} totalMonitored
  * @property {number} slaTarget
- * @property {number} slaObserved
- * @property {number} slaDeltaBps
+ * @property {number|null} slaObserved
+ * @property {number|null} slaDeltaBps
  * @property {ImpactRow[]} impact
  * @property {TrendPoint[]} trend
  * @property {number|null} lastUpdatedMs
@@ -161,14 +161,14 @@ No external third-party APIs. No auth headers from the frontend. The backend is 
 
 ### Dependencies
 
-No installs required. Every package needed is already pinned in `frontend/package.json`:
+No new dependencies required. Every package needed is declared in `frontend/package.json`:
 
 ```bash
-# Confirm the pinned versions are present (read-only check — do not reinstall)
+# Confirm installed versions are present (read-only check — do not reinstall)
 cd frontend && npm ls recharts lucide-react @tailwindcss/vite tailwindcss date-fns
 ```
 
-Expected (already installed): `recharts@^3.8.1`, `lucide-react@^1.8.0`, `@tailwindcss/vite@^4.2.2`, `tailwindcss@^4.2.2`, `date-fns@^4.1.0`.
+Declared dependency ranges: `recharts@^3.9.2`, `lucide-react@^1.41.0`, `@tailwindcss/vite@^4.3.2`, `tailwindcss@^4.3.3`, `date-fns@^4.4.0`.
 
 ## Scope Boundaries
 

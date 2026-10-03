@@ -1,13 +1,13 @@
 # Executive-view screenshots
 
-- `exec-operational.png` — live operational state, all services healthy
-- `exec-major.png` — mocked `major_outage` banner + 3 realistic impact rows (chat platform / identity provider / video conferencing)
+- `exec-operational.png` — target: live operational state, all services healthy
+- `exec-major.png` — target: mocked `major_outage` banner + 3 realistic impact rows (chat platform / identity provider / video conferencing)
 
-Both captured at 3840×4232 (1920-wide viewport × 2 DPR × full-page scroll).
+The PNG files are absent from this checkout. The capture script uses a 1920×1080 viewport at 2 DPR and full-page capture; output height depends on page content.
 
 ## Regenerating
 
-`frontend/scripts/capture-screenshots.mjs` uses `puppeteer-core` + your system Chrome to capture both states and write them here. `puppeteer-core` is not a project dependency — install it ad-hoc for the capture, don't commit it.
+`frontend/scripts/capture-screenshots.mjs` uses `puppeteer-core` + your system Chrome to capture both states and write them to `frontend/docs/executive-view-redesign/screenshots/`. `puppeteer-core` is not a project dependency — install it ad-hoc for the capture, don't commit it.
 
 ```bash
 # one-time, while the dev stack is up on :5173 + :8000
@@ -16,7 +16,7 @@ npm install --no-save --legacy-peer-deps puppeteer-core
 node scripts/capture-screenshots.mjs --allow-local-browser
 ```
 
-Output lands in `docs/executive-view-redesign/screenshots/`.
+Output lands in `frontend/docs/executive-view-redesign/screenshots/`; create that directory first, since the script does not create it.
 
 ### Major-outage state
 

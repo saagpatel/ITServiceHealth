@@ -1,6 +1,6 @@
 # Postmortems
 
-Auto-generated Markdown drafts written here when a Pulse-monitored service recovers from a non-operational state. Each file is a Google-SRE-style postmortem template with auto-filled facts (summary, timeline, impact) and `_TODO_` placeholders for the judgment sections a human needs to author.
+Auto-generated Markdown drafts written to `POSTMORTEMS_DIR` (`docs/postmortems` relative to the process working directory by default) when a Pulse-monitored service recovers from a non-operational state. Each file is a Google-SRE-style postmortem template with auto-filled facts (summary, timeline, impact) and `_TODO_` placeholders for the judgment sections a human needs to author.
 
 ## Filename Pattern
 

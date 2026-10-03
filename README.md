@@ -1,12 +1,12 @@
 # IT Service Health Dashboard
 
-Real-time status monitoring dashboard for ~30 SaaS services used across an enterprise IT environment. Polls vendor status pages every 60 seconds, detects changes, generates impact statements using a service dependency graph, posts Slack alerts, and displays a unified dark-themed operations dashboard.
+Real-time status monitoring dashboard for SaaS services used across an enterprise IT environment (10 in the committed example registry). Polls vendor status pages every 60 seconds, detects changes, generates impact statements using a service dependency graph, posts Slack alerts, and displays a unified dark-themed operations dashboard.
 
 ## Project status
 
 - **v1 (demo-ready) — SHIPPED.** All original spec delivered: polling, normalization, change detection, Slack alerting, React UI, dependency graph, timeline, SLA tracking, incident clustering, auto reports.
 - **v2 (production-ready) — SHIPPED.** Phases 0–6 of the production roadmap complete: bearer-token auth, vendor resilience (stamina + purgatory), alert quality (flap suppression, dedup, tier routing, dependency correlation, maintenance windows, flapping-badge UI), observability (structlog, Prometheus `/metrics`, Sentry, Healthchecks.io dead-man's switch), data lifecycle (production pragmas, retention, Litestream streaming + daily `VACUUM INTO` snapshot), UX productionization (severity-sorted grid, distinct poller-broken state, a11y + keyboard nav, Executive/Engineer view toggle, PWA, `recharts` SLA trend), and platform polish (CI, pre-commit, service supervision, reverse-proxy posture, OS-backed secret storage). **378 tests passing.**
-- **v2 Phase 2B + Phase 7 — in tree, gated off.** Statuspage inbound webhook receiver (`WEBHOOKS_ENABLED`), Slack ack flow (`SLACK_ACK_ENABLED`), postmortem drafts (`POSTMORTEMS_ENABLED`), SLO fuel-gauge + multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped with tests but default off. Flip each flag only after the deployment has the required signed callback reachability; postmortems need only a writable `POSTMORTEMS_DIR`.
+- **v2 Phase 2B + Phase 7 — in tree, gated off.** Statuspage inbound webhook receiver (`WEBHOOKS_ENABLED`), Slack ack flow (`SLACK_ACK_ENABLED`), postmortem drafts (`POSTMORTEMS_ENABLED`), scheduled multi-burn-rate alerting (`SLO_BURN_RATE_ENABLED`; SLO view/API always available), and Slack `/itstatus` slash command (`SLACK_SLASH_ENABLED`) all shipped with tests but default off. Webhook and Slack flags require signed callback reachability; postmortems need a writable `POSTMORTEMS_DIR`, and SLO burn-rate alerting runs locally.
 - **v2 Phase 7 remainder — optional.** LLM-layer impact statements; log-aggregation / ITSM / synthetic-monitoring integrations. Not on a fixed schedule; add as demand emerges.
 
 **Active roadmap:** [PRODUCTION-ROADMAP.md](./PRODUCTION-ROADMAP.md) — exit-criteria detail for every phase.
@@ -16,14 +16,13 @@ Real-time status monitoring dashboard for ~30 SaaS services used across an enter
 
 ```
 [Vendor Status Pages]
-    |-- Statuspage.io JSON API (15 services)
-    |-- Chat vendor status API (1 service)
-    |-- Productivity suite JSON feed (2 services)
-    |-- Manual updates via POST /api/admin/status (11 services)
+    |-- Statuspage.io JSON API (8 example services)
+    |-- Custom JSON adapters (available; unused by the example registry)
+    |-- Manual updates via POST /api/admin/status (2 example services)
               | (async poll every 60s)
        [Poll Orchestrator]
               |
-       [Status Normalizer] --> 5-state enum: operational|degraded|partial|major|unknown
+       [Status Normalizer] --> 5-state enum: operational|degraded|partial_outage|major_outage|unknown
               |
        [Change Detector] --> diff against DB, write status_events
               |
@@ -50,7 +49,7 @@ pip install -r backend/requirements.txt
 cd frontend && npm ci && npm run build && cd ..
 
 # 4. (Optional) Seed demo data for a populated timeline
-cd backend && python -m scripts.seed_demo_data && cd ..
+cd backend && PYTHONPATH=.. python -m scripts.seed_demo_data && cd ..
 
 # 5. Run (serves dashboard + API on port 8000)
 cd backend && python run.py
@@ -100,7 +99,7 @@ export TOKEN="<demo-admin-token>"
 curl -X POST http://localhost:8000/api/admin/status \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"service_id": "hr-system", "new_status": "degraded", "detail": "Slow login page", "reason": "Reported by user in the help channel"}'
+  -d '{"service_id": "ticketing", "new_status": "degraded", "detail": "Slow login page", "reason": "Reported by user in the help channel"}'
 
 # Set to major outage
 curl -X POST http://localhost:8000/api/admin/status \
@@ -168,10 +167,10 @@ Valid statuses: `operational`, `degraded`, `partial_outage`, `major_outage`, `un
 | `SLO_BURN_RATE_SLOW_THRESHOLD` | `6.0` | Slow-burn multiplier — triggers warning-level alert. |
 | `SLO_BURN_RATE_TICKET_THRESHOLD` | `1.0` | Ticket-severity burn multiplier — low-urgency notification only. |
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `backend/.env` and configure (settings load `.env` from the working directory used to run the backend):
 ```bash
-cp .env.example .env
-# Edit .env with your values
+cp .env.example backend/.env
+# Edit backend/.env with your values
 ```
 
 ## Development Mode
@@ -232,7 +231,7 @@ The production path is intentionally self-hosted and private-network oriented:
 - Put a reverse proxy in front for TLS and request headers.
 - Store tokens and webhook secrets in the host secret manager, not in git.
 - Keep read access behind the organization access controls.
-- Require bearer-token auth for every admin/write endpoint.
+- Require bearer-token auth for admin writes and signature verification for webhook and Slack callbacks.
 - Monitor `/api/health`, `/healthz`, `/metrics`, and the heartbeat job.
 
 Exact host paths, service-manager commands, firewall posture, and log locations
@@ -267,7 +266,7 @@ The dashboard auto-prunes old rows to keep the DB from growing without bound:
 | `status_events` | 90 days | `RETENTION_DAYS_STATUS_EVENTS` |
 | `alert_sent_log` | 90 days | `RETENTION_DAYS_ALERT_SENT_LOG` |
 
-The retention job runs every `RETENTION_INTERVAL_HOURS` (default 168 = weekly) and a truncating WAL checkpoint runs every `WAL_CHECKPOINT_INTERVAL_HOURS` (default 24) so deleted rows actually reclaim disk. Set any retention window to `0` to keep data forever.
+The retention job runs every `RETENTION_INTERVAL_HOURS` (default 168 = weekly) and a truncating WAL checkpoint runs every `WAL_CHECKPOINT_INTERVAL_HOURS` (default 24) to truncate the WAL; deleted database pages remain available for reuse. Set any retention window to `0` to keep data forever.
 
 ## API Endpoints
 
@@ -285,7 +284,7 @@ The retention job runs every `RETENTION_INTERVAL_HOURS` (default 168 = weekly) a
 | `/api/services/graph` | GET | Service dependency graph (nodes + links) for visualization |
 | `/api/services/slo` | GET | Per-service SLO snapshot: error-budget remaining + active burn-rate breaches |
 | `/api/admin/status` | POST | Manual status update (requires `Authorization: Bearer $ADMIN_API_TOKEN`) |
-| `/healthz` | GET | Dead-man's switch — 200 fresh / 503 stale. Hit by the service supervisor + Healthchecks.io. |
+| `/healthz` | GET | Dead-man's switch — 200 fresh / 503 stale. Can be monitored by a service supervisor; the heartbeat job separately pings `HEALTHCHECK_PING_URL`. |
 | `/metrics` | GET | Prometheus text exposition. |
 | `/api/webhooks/statuspage/{id}` | POST | Inbound Statuspage subscriber webhook, HMAC-verified. 404 unless `WEBHOOKS_ENABLED=true`. |
 | `/api/slack/interactivity` | POST | Slack block-actions receiver (ack button). 404 unless `SLACK_ACK_ENABLED=true`. |
