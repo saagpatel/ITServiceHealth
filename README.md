@@ -211,7 +211,7 @@ Broader checks from that same directory are `uv run pytest`, `uv run ruff check 
 CI currently treats mypy failures as non-blocking; report local typing failures
 rather than interpreting a green CI run as a complete typing pass.
 
-From `frontend`, use Node 20.19+ in the Node 20 line, or 22.12+ (Vite 8), `npm ci`, `npm run lint`, and
+From `frontend`, use Node 20.19+ (20.x), 22.13+ (22.x), or 24+ (Vite 8 and ESLint 10), `npm ci`, `npm run lint`, and
 `npm run build`, using its committed `package-lock.json`. CI currently tolerates
 frontend ESLint failures. The frontend has no test runner, formatter, or separate
 typecheck script configured; do not claim those checks from Vite's build.
