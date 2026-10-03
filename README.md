@@ -47,7 +47,7 @@ python3.13 -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
 
 # 3. Build frontend
-cd frontend && npm install && npm run build && cd ..
+cd frontend && npm ci && npm run build && cd ..
 
 # 4. (Optional) Seed demo data for a populated timeline
 cd backend && python -m scripts.seed_demo_data && cd ..
@@ -187,6 +187,42 @@ cd frontend && npm run dev
 ```
 
 Frontend dev server at `localhost:5173` proxies `/api/*` to `localhost:8000`.
+
+## Verification without starting services
+
+Use a fresh checkout without a copied `.env`, real webhook credentials, or an
+existing database. `python run.py` starts pollers and other configured jobs;
+seeding, retention, backup/restore, and live alert callbacks are not verification
+fixtures. The unit tests use temporary/in-memory SQLite and mocked vendor input.
+
+From `backend`, match the Python 3.12 CI environment:
+
+```bash
+uv venv --python 3.12
+uv pip install -r requirements.txt
+uv pip install ruff mypy
+uv run pytest tests/test_normalizer.py
+```
+
+Broader checks from that same directory are `uv run pytest`, `uv run ruff check .`,
+`uv run ruff format --check .`, and `uv run mypy app`. Dependencies come from
+`requirements.txt`; the tool commands/configuration are in
+[backend/pyproject.toml](backend/pyproject.toml) and [CI](.github/workflows/ci.yml).
+CI currently treats mypy failures as non-blocking; report local typing failures
+rather than interpreting a green CI run as a complete typing pass.
+
+From `frontend`, use Node 20.19+ in the Node 20 line, or 22.12+ (Vite 8), `npm ci`, `npm run lint`, and
+`npm run build`, using its committed `package-lock.json`. CI currently tolerates
+frontend ESLint failures. The frontend has no test runner, formatter, or separate
+typecheck script configured; do not claim those checks from Vite's build.
+
+For changed dashboard, timeline, or report behavior, serve the frontend on a
+separate local port and intercept `/api/` responses with synthetic fixtures, or
+use an explicitly isolated demo backend with vendor/alert boundaries stubbed.
+Check changed views, empty/error states, severity ordering, and keyboard use.
+Do not point a browser verification session at an existing deployment or enable
+Slack/webhook/poller integrations merely to verify docs. Browser checks are
+conditional on user-facing changes; this fixture test lane starts no service.
 
 ## Private Deployment Notes
 
