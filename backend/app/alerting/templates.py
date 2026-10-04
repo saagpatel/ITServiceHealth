@@ -4,6 +4,8 @@ Generates human-readable impact statements from status changes
 and the service dependency graph. Uses simple string templates.
 """
 
+from typing import Any
+
 from app.config import settings
 from app.poller.change_detector import StatusChange
 
@@ -36,7 +38,7 @@ TEMPLATES = {
 
 def generate_impact_statement(
     change: StatusChange,
-    downstream: list[dict],
+    downstream: list[dict[str, Any]],
 ) -> str:
     """Generate an impact statement for a status change.
 

@@ -2,6 +2,7 @@
 
 import logging
 from enum import StrEnum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ def normalize_statuspage_indicator(indicator: str) -> ServiceStatus:
 # ── Current Status API ────────────────────────────────────────────
 
 
-def normalize_current_status(response: dict) -> ServiceStatus:
+def normalize_current_status(response: dict[str, Any]) -> ServiceStatus:
     """Map a current-status API dict response to ServiceStatus.
 
     When status is "ok" and no active incidents → OPERATIONAL.
@@ -120,7 +121,9 @@ PRODUCT_FEED_NAMES: dict[str, list[str]] = {
 }
 
 
-def normalize_product_feed_status(incidents: list[dict], service_id: str) -> ServiceStatus:
+def normalize_product_feed_status(
+    incidents: list[dict[str, Any]], service_id: str
+) -> ServiceStatus:
     """Map a multi-product incident feed to ServiceStatus for a specific product.
 
     The feed contains incidents for all products; filter by matching product

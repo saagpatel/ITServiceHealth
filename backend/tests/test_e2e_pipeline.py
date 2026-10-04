@@ -116,7 +116,8 @@ async def test_poll_change_db_alert_pipeline(db):
 
         # DB reflects the confirmed state + status_events row
         cursor = await db.execute(
-            "SELECT current_status FROM services WHERE id=?", (SERVICE_ID,),
+            "SELECT current_status FROM services WHERE id=?",
+            (SERVICE_ID,),
         )
         assert (await cursor.fetchone())[0] == "major_outage"
 
@@ -128,7 +129,8 @@ async def test_poll_change_db_alert_pipeline(db):
 
         # Run the alerting pipeline and assert Slack got one critical-tier post
         alerts_before = ALERTS_SENT_TOTAL.labels(
-            kind="status_change", severity="critical",
+            kind="status_change",
+            severity="critical",
         )._value.get()
         await process_changes(db, lock, changes, http_client=client)
 
@@ -151,6 +153,7 @@ async def test_poll_change_db_alert_pipeline(db):
 
     # Counter incremented exactly once
     alerts_after = ALERTS_SENT_TOTAL.labels(
-        kind="status_change", severity="critical",
+        kind="status_change",
+        severity="critical",
     )._value.get()
     assert alerts_after - alerts_before == 1

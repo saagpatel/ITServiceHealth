@@ -1,6 +1,7 @@
 """Timeline API route: chronological feed of status change events."""
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter
 
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/api", tags=["timeline"])
 async def get_timeline(
     limit: int = 50,
     service_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Get recent status events, newest first."""
     db = await get_db()
 
@@ -28,7 +29,9 @@ async def get_timeline(
         )
     else:
         cursor = await db.execute("SELECT count(*) FROM status_events")
-    total = (await cursor.fetchone())[0]
+    count_row = await cursor.fetchone()
+    assert count_row is not None, "Expected database aggregate row"
+    total = count_row[0]
 
     # Fetch events
     if service_id:
@@ -66,7 +69,7 @@ async def get_timeline(
 async def get_timeline_clustered(
     window: int = 300,
     limit: int = 100,
-) -> dict:
+) -> dict[str, Any]:
     """Get timeline events grouped into incident clusters.
 
     Events within `window` seconds of each other are grouped.
@@ -111,7 +114,7 @@ async def get_timeline_clustered(
 
     # Layer 1: Time-window clustering
     clusters = []
-    current_cluster: list[dict] = []
+    current_cluster: list[dict[str, Any]] = []
 
     for event in events:
         event_time = datetime.fromisoformat(event["created_at"].replace("Z", "+00:00"))
@@ -153,7 +156,9 @@ SEVERITY_RANK = {
 }
 
 
-def _finalize_cluster(events: list[dict], downstream_map: dict[str, set[str]]) -> dict:
+def _finalize_cluster(
+    events: list[dict[str, Any]], downstream_map: dict[str, set[str]]
+) -> dict[str, Any]:
     """Finalize a cluster: detect root cause, compute severity."""
     service_ids = {e["service_id"] for e in events}
     unique_services = {e["service_id"]: e["service_name"] for e in events}

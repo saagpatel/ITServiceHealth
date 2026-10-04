@@ -46,6 +46,7 @@ def _isolated_lifespan(tmp_path, monkeypatch):
     # Import lazily — scheduler module binds `scheduler` at import time
     # but start/stop are the functions `lifespan` calls.
     import app.poller.scheduler as scheduler_module
+
     monkeypatch.setattr(scheduler_module, "start_scheduler", _noop_start)
     monkeypatch.setattr(scheduler_module, "stop_scheduler", _noop_stop)
     # main.py re-imports these lazily inside lifespan, so also patch
@@ -70,10 +71,13 @@ async def test_healthz_after_lifespan(_isolated_lifespan):
     """`/healthz` is the dead-man's switch; it must answer once we're up."""
     from app.main import app
 
-    async with LifespanManager(app), AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test",
-    ) as client:
+    async with (
+        LifespanManager(app),
+        AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client,
+    ):
         resp = await client.get("/healthz")
 
     # Fresh boot → heartbeat is young. Either 200 (scheduler stub still
@@ -91,10 +95,13 @@ async def test_api_health_after_lifespan(_isolated_lifespan):
     """`/api/health` returns the expected shape after a real boot."""
     from app.main import app
 
-    async with LifespanManager(app), AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test",
-    ) as client:
+    async with (
+        LifespanManager(app),
+        AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client,
+    ):
         resp = await client.get("/api/health")
 
     assert resp.status_code == 200

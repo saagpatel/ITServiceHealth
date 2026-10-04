@@ -270,9 +270,7 @@ class TestSLOEndpoint:
         # 99.9% SLO, budget=0.1%. Used=0.05% → 50% remaining.
         assert abs(svc["error_budget_remaining_pct"] - 50.0) < 1.0
 
-    async def test_slo_includes_service_metadata(
-        self, blank_client: Any, blank_app: Any
-    ) -> None:
+    async def test_slo_includes_service_metadata(self, blank_client: Any, blank_app: Any) -> None:
         """Service seeded with tier=critical, category=identity → response includes them."""
         from app.database import get_db
 

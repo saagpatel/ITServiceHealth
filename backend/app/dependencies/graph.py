@@ -4,12 +4,14 @@ Provides functions to query upstream and downstream dependencies
 from the service_dependencies table, enriched with current status.
 """
 
+from typing import Any
+
 import aiosqlite
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 
-async def get_downstream(db: aiosqlite.Connection, service_id: str) -> list[dict]:
+async def get_downstream(db: aiosqlite.Connection, service_id: str) -> list[dict[str, Any]]:
     """Get all services that are impacted when the given service breaks.
 
     Returns list of dicts with: service_id, service_name, impact_description,
@@ -37,7 +39,7 @@ async def get_downstream(db: aiosqlite.Connection, service_id: str) -> list[dict
     return [dict(row) for row in await cursor.fetchall()]
 
 
-async def get_upstream(db: aiosqlite.Connection, service_id: str) -> list[dict]:
+async def get_upstream(db: aiosqlite.Connection, service_id: str) -> list[dict[str, Any]]:
     """Get all services that the given service depends on.
 
     Returns list of dicts with: service_id, service_name, impact_description,

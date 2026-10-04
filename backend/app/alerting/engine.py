@@ -15,6 +15,7 @@ Handles two distinct alert channels:
 import asyncio
 import logging
 from datetime import UTC
+from typing import Any
 
 import aiosqlite
 import httpx
@@ -66,7 +67,9 @@ async def process_changes(
     # Dependency correlation: group downstream changes under upstream
     # parent changes when the configured threshold is met.
     aggregation = await find_aggregation_candidates(
-        db, changes, threshold=settings.dependency_correlation_threshold,
+        db,
+        changes,
+        threshold=settings.dependency_correlation_threshold,
     )
     aggregated_under: dict[str, str] = {}
     for upstream_id, dependents in aggregation.items():
@@ -106,29 +109,31 @@ async def process_changes(
         except Exception:
             logger.exception("Failed to write impact_statement for %s", change.service_id)
 
-        is_boot_warmup = (
-            change.previous_status == "unknown"
-            and change.new_status == "operational"
-        )
+        is_boot_warmup = change.previous_status == "unknown" and change.new_status == "operational"
         if change.new_status == "operational" and not is_boot_warmup:
             try:
                 from datetime import datetime
 
                 from app.reports import generate_incident_report
+
                 resolved_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-                report = await generate_incident_report(db, write_lock, change.service_id, resolved_at)
+                report = await generate_incident_report(
+                    db, write_lock, change.service_id, resolved_at
+                )
                 if settings.postmortems_enabled and report:
                     try:
                         from pathlib import Path
 
                         from app.postmortems import write_postmortem
+
                         out_dir = Path(settings.postmortems_dir).resolve()
                         written = await write_postmortem(report, out_dir=out_dir)
                         if written:
                             logger.info("Wrote postmortem draft: %s", written)
                     except Exception:
                         logger.exception(
-                            "Failed to write postmortem for %s", change.service_id,
+                            "Failed to write postmortem for %s",
+                            change.service_id,
                         )
             except Exception:
                 logger.exception("Failed to generate incident report for %s", change.service_id)
@@ -138,10 +143,7 @@ async def process_changes(
     # Tuple: (change, channel_mention, dedup_key)
     individual_sends: list[tuple[StatusChange, str, str]] = []
     for change in changes:
-        is_boot_warmup = (
-            change.previous_status == "unknown"
-            and change.new_status == "operational"
-        )
+        is_boot_warmup = change.previous_status == "unknown" and change.new_status == "operational"
         if is_boot_warmup:
             # Still record the state transition, but don't alert — a service
             # resolving from unknown to operational just means the poller
@@ -149,7 +151,8 @@ async def process_changes(
             continue
 
         decision = await route_status_change(
-            db, change,
+            db,
+            change,
             aggregated_under=aggregated_under.get(change.service_id),
             vendor_incident_id=change.vendor_incident_id,
         )
@@ -161,23 +164,28 @@ async def process_changes(
             logger.info(
                 "Suppressed alert for %s (%s → %s): %s",
                 change.service_display_name,
-                change.previous_status, change.new_status,
+                change.previous_status,
+                change.new_status,
                 decision.suppressed_by,
             )
             continue
         individual_sends.append((change, decision.channel_mention or "", decision.dedup_key))
 
     # Build aggregated upstream messages (one per upstream with >= threshold dependents)
-    aggregated_payloads: list[tuple[str, dict]] = []
+    aggregated_payloads: list[tuple[str, dict[str, Any]]] = []
     for upstream_id, dependents in aggregation.items():
         upstream_change = next(c for c in changes if c.service_id == upstream_id)
         decision = await route_status_change(
-            db, upstream_change,
+            db,
+            upstream_change,
             vendor_incident_id=upstream_change.vendor_incident_id,
         )
         async with write_lock:
             await record_alert(
-                db, upstream_change, decision, alert_kind="aggregated_upstream",
+                db,
+                upstream_change,
+                decision,
+                alert_kind="aggregated_upstream",
             )
             await db.commit()
 
@@ -190,7 +198,8 @@ async def process_changes(
             logger.info(
                 "Aggregated alert for %s suppressed (%s); %d dependents also silenced",
                 upstream_change.service_display_name,
-                decision.suppressed_by, len(dependents),
+                decision.suppressed_by,
+                len(dependents),
             )
             continue
 
@@ -201,12 +210,13 @@ async def process_changes(
             mention=decision.channel_mention,
             dedup_key=decision.dedup_key,
         )
-        aggregated_payloads.append((decision.webhook_url, payload))
+        if decision.webhook_url is not None:
+            aggregated_payloads.append((decision.webhook_url, payload))
 
     # Send aggregated payloads first (they're the headline news)
-    for webhook_url, payload in aggregated_payloads:
+    for aggregated_webhook_url, payload in aggregated_payloads:
         try:
-            ok = await send_slack_alert(webhook_url, payload, client=http_client)
+            ok = await send_slack_alert(aggregated_webhook_url, payload, client=http_client)
             if ok:
                 logger.info("Sent aggregated upstream alert")
             else:
@@ -259,7 +269,8 @@ async def process_changes(
                     logger.info("Sent Slack alert for %s", change.service_display_name)
                 else:
                     logger.warning(
-                        "Failed to send Slack alert for %s", change.service_display_name,
+                        "Failed to send Slack alert for %s",
+                        change.service_display_name,
                     )
     except Exception:
         logger.exception("Slack alerting failed")
@@ -283,10 +294,7 @@ async def process_poller_health_changes(
     if not health_changes:
         return
 
-    webhook_url = (
-        settings.poller_health_slack_webhook_url_str
-        or settings.slack_webhook_url_str
-    )
+    webhook_url = settings.poller_health_slack_webhook_url_str or settings.slack_webhook_url_str
     if not webhook_url:
         logger.debug(
             "No webhook configured, skipping %d poller-health alert(s)",
@@ -305,11 +313,14 @@ async def process_poller_health_changes(
         payload = build_poller_health_alert(hc, using_fallback=using_fallback)
         try:
             success = await send_slack_alert(
-                webhook_url, payload, client=http_client,
+                webhook_url,
+                payload,
+                client=http_client,
             )
             if success:
                 ALERTS_SENT_TOTAL.labels(
-                    kind="poller_health", severity=hc.new_health,
+                    kind="poller_health",
+                    severity=hc.new_health,
                 ).inc()
                 logger.info(
                     "Sent poller-health alert: %s %s → %s",
@@ -324,5 +335,6 @@ async def process_poller_health_changes(
                 )
         except Exception:
             logger.exception(
-                "Poller-health alert failed for %s", hc.service_display_name,
+                "Poller-health alert failed for %s",
+                hc.service_display_name,
             )

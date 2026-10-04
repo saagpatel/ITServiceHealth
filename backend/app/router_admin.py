@@ -5,6 +5,7 @@ are audited: `updated_by`, `reason`, and `client_ip` are written to `status_even
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -35,7 +36,7 @@ async def update_service_status(
     request: Request,
     body: StatusUpdateRequest,
     principal: str = Depends(require_admin_token),
-) -> dict:
+) -> dict[str, Any]:
     """Manually update a service's status.
 
     Goes through the same change detection path as automated pollers,
@@ -82,21 +83,30 @@ async def update_service_status(
 
     logger.info(
         "Admin update: service=%s new_status=%s by=%s from=%s",
-        body.service_id, body.new_status.value, principal, client_ip,
+        body.service_id,
+        body.new_status.value,
+        principal,
+        client_ip,
     )
 
     # Process alerting (impact statement + Slack)
     if change is not None:
         from app.alerting.engine import process_changes
+
         http_client = getattr(request.app.state, "http_client", None)
         await process_changes(
-            db, write_lock, [change],
+            db,
+            write_lock,
+            [change],
             http_client=http_client,
         )
 
     # Fetch updated service
     cursor = await db.execute("SELECT * FROM services WHERE id = ?", (body.service_id,))
-    updated = dict(await cursor.fetchone())
+    updated_row = await cursor.fetchone()
+    if updated_row is None:
+        raise HTTPException(status_code=404, detail=f"Service '{body.service_id}' not found")
+    updated = dict(updated_row)
 
     return {
         "data": updated,

@@ -71,7 +71,7 @@ _breaker_threshold: int = DEFAULT_BREAKER_THRESHOLD
 _breaker_ttl: float = DEFAULT_BREAKER_TTL_SECONDS
 
 
-def _on_breaker_event(name: str, event_type: str, event) -> None:
+def _on_breaker_event(name: str, event_type: str, event: object) -> None:
     """Mirror purgatory state transitions into the Prometheus gauge.
 
     purgatory dispatches events as (name, event_type, event). We only

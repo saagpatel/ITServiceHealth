@@ -84,9 +84,10 @@ async def purge_old_rows(
         _, _, pages_reclaimed = await checkpoint_wal(target)
 
     logger.info(
-        "Retention: %d status_events deleted, %d alert_sent_log deleted, "
-        "%d WAL pages reclaimed",
-        events_deleted, alerts_deleted, pages_reclaimed,
+        "Retention: %d status_events deleted, %d alert_sent_log deleted, %d WAL pages reclaimed",
+        events_deleted,
+        alerts_deleted,
+        pages_reclaimed,
     )
 
     return RetentionResult(
@@ -104,6 +105,7 @@ async def scheduled_retention_tick() -> None:
     the scheduler.
     """
     from app.config import settings
+
     try:
         await purge_old_rows(
             status_events_days=settings.retention_days_status_events,

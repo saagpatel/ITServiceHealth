@@ -51,7 +51,9 @@ def _mark_heartbeat() -> None:
     SCHEDULER_LAST_HEARTBEAT_SECONDS.set(0.0)
 
 
-async def heartbeat_tick(http_client_factory: Callable[[], httpx.AsyncClient] | None = None) -> None:
+async def heartbeat_tick(
+    http_client_factory: Callable[[], httpx.AsyncClient] | None = None,
+) -> None:
     """One heartbeat: update in-process state and (optionally) ping externally.
 
     Uses a short-lived httpx client for the external ping so a failure here

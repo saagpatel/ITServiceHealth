@@ -130,7 +130,9 @@ async def _apply_webhook_change(
 
     if new_status.value == old_status:
         logger.debug(
-            "Webhook for %s: status unchanged (%s) — no-op", service_id, old_status,
+            "Webhook for %s: status unchanged (%s) — no-op",
+            service_id,
+            old_status,
         )
         return None
 
@@ -153,15 +155,23 @@ async def _apply_webhook_change(
                 vendor_detail, source, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
-                service_id, old_status, new_status.value,
-                None, status_detail, source, now,
+                service_id,
+                old_status,
+                new_status.value,
+                None,
+                status_detail,
+                source,
+                now,
             ),
         )
         event_id: int = cursor.lastrowid  # type: ignore[assignment]
         await conn.commit()
 
     logger.info(
-        "Webhook applied: %s %s → %s", service_id, old_status, new_status.value,
+        "Webhook applied: %s %s → %s",
+        service_id,
+        old_status,
+        new_status.value,
     )
     return StatusChange(
         service_id=service_id,
@@ -217,7 +227,9 @@ async def receive_statuspage_webhook(
     # 4. Replay protection via timestamp
     if not _check_timestamp(x_statuspage_timestamp):
         logger.warning(
-            "Webhook for %s: stale timestamp %r", service_id, x_statuspage_timestamp,
+            "Webhook for %s: stale timestamp %r",
+            service_id,
+            x_statuspage_timestamp,
         )
         raise HTTPException(status_code=403, detail="Stale webhook timestamp")
 
@@ -246,7 +258,8 @@ async def receive_statuspage_webhook(
             payload: dict[str, Any] = await request.json()
         except Exception:
             logger.warning(
-                "Webhook for %s: invalid JSON body — acknowledging anyway", service_id,
+                "Webhook for %s: invalid JSON body — acknowledging anyway",
+                service_id,
             )
             return {"ok": True}
 
@@ -269,7 +282,12 @@ async def receive_statuspage_webhook(
 
         write_lock = get_write_lock()
         change = await _apply_webhook_change(
-            db, write_lock, service_id, service_row, new_status, status_detail,
+            db,
+            write_lock,
+            service_id,
+            service_row,
+            new_status,
+            status_detail,
         )
 
         if change:

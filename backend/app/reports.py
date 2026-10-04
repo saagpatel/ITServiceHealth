@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
+from typing import Any
 
 import aiosqlite
 
@@ -29,7 +30,7 @@ async def generate_incident_report(
     write_lock: asyncio.Lock,
     service_id: str,
     resolved_at: str,
-) -> dict | None:
+) -> dict[str, Any] | None:
     """Generate a post-incident report for a service that just recovered.
 
     Walks backwards from resolved_at to find the incident start, collects
@@ -109,8 +110,7 @@ async def generate_incident_report(
     # Generate summary
     duration_human = _format_duration(duration_seconds)
     impact_summary = (
-        f"{service_name} experienced {peak_severity.replace('_', ' ')} "
-        f"for {duration_human}. "
+        f"{service_name} experienced {peak_severity.replace('_', ' ')} for {duration_human}. "
     )
     if affected_names:
         impact_summary += f"Potentially affected: {', '.join(affected_names[:5])}."
@@ -126,9 +126,14 @@ async def generate_incident_report(
                 events_json, impact_summary)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                service_id, started_at, resolved_at, duration_seconds,
-                peak_severity, json.dumps(affected_names),
-                len(incident_events), json.dumps(incident_events),
+                service_id,
+                started_at,
+                resolved_at,
+                duration_seconds,
+                peak_severity,
+                json.dumps(affected_names),
+                len(incident_events),
+                json.dumps(incident_events),
                 impact_summary,
             ),
         )
@@ -136,7 +141,10 @@ async def generate_incident_report(
 
     logger.info(
         "Generated incident report for %s: %s, duration %s, peak %s",
-        service_name, started_at, duration_human, peak_severity,
+        service_name,
+        started_at,
+        duration_human,
+        peak_severity,
     )
 
     return {

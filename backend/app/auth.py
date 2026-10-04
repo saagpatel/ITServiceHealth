@@ -32,9 +32,7 @@ def require_admin_token(
     """
     expected = settings.admin_api_token
     if not expected:
-        logger.error(
-            "Admin endpoint called but ADMIN_API_TOKEN is unset; refusing request"
-        )
+        logger.error("Admin endpoint called but ADMIN_API_TOKEN is unset; refusing request")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={

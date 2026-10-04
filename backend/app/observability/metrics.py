@@ -60,6 +60,7 @@ def outcome_from_failure_reason(reason: str | None) -> str:
         return "parse_error"
     return "other"
 
+
 SERVICE_STATUS = Gauge(
     "service_status",
     "Current normalized status for each service "

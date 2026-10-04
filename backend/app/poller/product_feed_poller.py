@@ -6,6 +6,7 @@ affected_products list; entries without an "end" timestamp are active.
 """
 
 import logging
+from typing import Any
 
 import httpx
 
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 async def poll_product_feed(
     client: httpx.AsyncClient,
     poll_url: str,
-    services: list[dict],
+    services: list[dict[str, Any]],
 ) -> list[tuple[str, PollResult]]:
     """Poll a multi-product incident feed for multiple services in one call.
 

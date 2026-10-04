@@ -114,6 +114,7 @@ class TestHeartbeat:
 
     def test_fresh_after_tick(self, monkeypatch):
         from app.config import settings
+
         monkeypatch.setattr(settings, "heartbeat_stale_after_seconds", 120)
         heartbeat._mark_heartbeat()
         assert heartbeat.is_heartbeat_fresh()
@@ -121,6 +122,7 @@ class TestHeartbeat:
 
     def test_stale_when_past_threshold(self, monkeypatch):
         from app.config import settings
+
         monkeypatch.setattr(settings, "heartbeat_stale_after_seconds", 1)
         # Backdate by faking the monotonic value
         heartbeat._last_heartbeat_monotonic = time.monotonic() - 10
@@ -135,6 +137,7 @@ class TestHeartbeat:
 
     async def test_tick_without_ping_url(self, monkeypatch):
         from app.config import settings
+
         monkeypatch.setattr(settings, "healthcheck_ping_url", None)
         # Should not raise even without a configured ping URL
         await heartbeat.heartbeat_tick()
@@ -143,8 +146,10 @@ class TestHeartbeat:
     async def test_tick_swallows_ping_failure(self, monkeypatch):
         # Set a bogus URL — the ping will fail, but the tick must not raise
         from app.config import settings
+
         monkeypatch.setattr(
-            settings, "healthcheck_ping_url",
+            settings,
+            "healthcheck_ping_url",
             "http://127.0.0.1:1/definitely-not-listening",
         )
         await heartbeat.heartbeat_tick()
@@ -162,6 +167,7 @@ class TestObservabilityEndpoints:
 
         await init_db(str(tmp_path / "test.db"))
         from app.main import app
+
         async with AsyncClient(
             transport=ASGITransport(app=app),
             base_url="http://test",
@@ -179,6 +185,7 @@ class TestObservabilityEndpoints:
 
     async def test_healthz_fresh_returns_200(self, app_client, monkeypatch):
         from app.config import settings
+
         monkeypatch.setattr(settings, "heartbeat_stale_after_seconds", 120)
         heartbeat._last_heartbeat_monotonic = time.monotonic()
         resp = await app_client.get("/healthz")
@@ -189,6 +196,7 @@ class TestObservabilityEndpoints:
 
     async def test_healthz_stale_returns_503(self, app_client, monkeypatch):
         from app.config import settings
+
         monkeypatch.setattr(settings, "heartbeat_stale_after_seconds", 1)
         heartbeat._last_heartbeat_monotonic = time.monotonic() - 60
         resp = await app_client.get("/healthz")

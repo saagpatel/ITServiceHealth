@@ -50,6 +50,7 @@ def configure_logging(
         structlog.processors.format_exc_info,
     ]
 
+    renderer: structlog.types.Processor
     if json_format:
         renderer = structlog.processors.JSONRenderer()
     else:
@@ -90,13 +91,16 @@ def configure_logging(
         # I/O (including WatchedFileHandler's inode-check-and-reopen on
         # rotation) never blocks the asyncio event loop.
         file_handler = logging.handlers.WatchedFileHandler(
-            str(log_file), encoding="utf-8",
+            str(log_file),
+            encoding="utf-8",
         )
         file_handler.setFormatter(formatter)
         log_queue: queue_mod.Queue[logging.LogRecord] = queue_mod.Queue(-1)
         queue_handler = logging.handlers.QueueHandler(log_queue)
         listener = logging.handlers.QueueListener(
-            log_queue, file_handler, respect_handler_level=True,
+            log_queue,
+            file_handler,
+            respect_handler_level=True,
         )
         root.addHandler(queue_handler)
         result_listener: logging.handlers.QueueListener | None = listener
@@ -120,4 +124,4 @@ def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     stdlib-compat. Use this when you want structlog-native features like
     ``.bind()`` for per-call context.
     """
-    return structlog.get_logger(name)
+    return structlog.stdlib.get_logger(name)

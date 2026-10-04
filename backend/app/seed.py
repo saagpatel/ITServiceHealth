@@ -281,10 +281,12 @@ async def seed_all(clean: bool = False) -> None:
     # Summary
     cursor = await conn.execute("SELECT count(*) FROM services")
     row = await cursor.fetchone()
+    assert row is not None, "Expected database result row"
     logger.info("Total services in DB: %d", row[0])
 
     cursor = await conn.execute("SELECT count(*) FROM service_dependencies")
     row = await cursor.fetchone()
+    assert row is not None, "Expected database result row"
     logger.info("Total dependency edges in DB: %d", row[0])
 
     await close_db()

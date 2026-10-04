@@ -14,6 +14,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 import aiosqlite
 
@@ -164,9 +165,7 @@ def _update_pending(
     ready_by_dwell = True
     if going_worse and min_state_duration_seconds > 0:
         try:
-            since_dt = datetime.fromisoformat(
-                new_since.replace("Z", "+00:00")
-            )
+            since_dt = datetime.fromisoformat(new_since.replace("Z", "+00:00"))
             elapsed = (now_dt - since_dt).total_seconds()
             ready_by_dwell = elapsed >= min_state_duration_seconds
         except (ValueError, AttributeError):
@@ -248,7 +247,10 @@ async def detect_changes(
 
             new_failures = 0 if poll_succeeded else prev_failures + 1
             new_health = _compute_new_health(
-                prev_health, new_failures, poll_succeeded, threshold,
+                prev_health,
+                new_failures,
+                poll_succeeded,
+                threshold,
             )
 
             # Metrics: outcome of this poll + current poller-health gauge
@@ -261,31 +263,38 @@ async def detect_changes(
             # Only emit health changes for broken transitions — the signal
             # we want operators to see in #poller-health.
             if prev_health != "broken" and new_health == "broken":
-                health_changes.append(PollerHealthChange(
-                    service_id=service_id,
-                    service_display_name=svc["display_name"],
-                    previous_health=prev_health,
-                    new_health=new_health,
-                    consecutive_failures=new_failures,
-                    failure_reason=poll_result.poll_failure_reason,
-                ))
+                health_changes.append(
+                    PollerHealthChange(
+                        service_id=service_id,
+                        service_display_name=svc["display_name"],
+                        previous_health=prev_health,
+                        new_health=new_health,
+                        consecutive_failures=new_failures,
+                        failure_reason=poll_result.poll_failure_reason,
+                    )
+                )
                 logger.warning(
                     "Poller BROKEN for %s (%s) after %d failures: %s",
-                    svc["display_name"], service_id,
-                    new_failures, poll_result.poll_failure_reason,
+                    svc["display_name"],
+                    service_id,
+                    new_failures,
+                    poll_result.poll_failure_reason,
                 )
             elif prev_health == "broken" and new_health == "healthy":
-                health_changes.append(PollerHealthChange(
-                    service_id=service_id,
-                    service_display_name=svc["display_name"],
-                    previous_health=prev_health,
-                    new_health=new_health,
-                    consecutive_failures=0,
-                    failure_reason=None,
-                ))
+                health_changes.append(
+                    PollerHealthChange(
+                        service_id=service_id,
+                        service_display_name=svc["display_name"],
+                        previous_health=prev_health,
+                        new_health=new_health,
+                        consecutive_failures=0,
+                        failure_reason=None,
+                    )
+                )
                 logger.info(
                     "Poller RECOVERED for %s (%s)",
-                    svc["display_name"], service_id,
+                    svc["display_name"],
+                    service_id,
                 )
 
             # Update the health-trail columns every cycle
@@ -301,7 +310,8 @@ async def detect_changes(
                     new_failures,
                     new_health,
                     poll_result.poll_failure_reason if not poll_succeeded else None,
-                    poll_succeeded, now,
+                    poll_succeeded,
+                    now,
                     now,
                     service_id,
                 ),
@@ -365,34 +375,48 @@ async def detect_changes(
                         vendor_detail, source, created_at, vendor_incident_id)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        service_id, old_status, new_status, vendor_title,
-                        poll_result.status_detail, svc["poll_type"], now,
+                        service_id,
+                        old_status,
+                        new_status,
+                        vendor_title,
+                        poll_result.status_detail,
+                        svc["poll_type"],
+                        now,
                         vendor_incident_id,
                     ),
                 )
                 event_id = cursor_ins.lastrowid
 
-                changes.append(StatusChange(
-                    service_id=service_id,
-                    service_display_name=svc["display_name"],
-                    previous_status=old_status,
-                    new_status=new_status,
-                    status_detail=poll_result.status_detail,
-                    poll_type=svc["poll_type"],
-                    status_page_url=svc["status_page_url"],
-                    event_id=event_id,
-                    vendor_incident_id=vendor_incident_id,
-                ))
+                changes.append(
+                    StatusChange(
+                        service_id=service_id,
+                        service_display_name=svc["display_name"],
+                        previous_status=old_status,
+                        new_status=new_status,
+                        status_detail=poll_result.status_detail,
+                        poll_type=svc["poll_type"],
+                        status_page_url=svc["status_page_url"],
+                        event_id=event_id,
+                        vendor_incident_id=vendor_incident_id,
+                    )
+                )
 
                 logger.info(
                     "Confirmed status change: %s (%s) %s → %s",
-                    svc["display_name"], service_id, old_status, new_status,
+                    svc["display_name"],
+                    service_id,
+                    old_status,
+                    new_status,
                 )
             elif decision.new_pending_status and decision.new_pending_count == 1:
                 logger.debug(
                     "Pending %s (%s) → %s (1 poll, need %d)",
-                    svc["display_name"], service_id, poll_status,
-                    confirm_threshold if _is_going_worse(old_status, poll_status) else recovery_threshold,
+                    svc["display_name"],
+                    service_id,
+                    poll_status,
+                    confirm_threshold
+                    if _is_going_worse(old_status, poll_status)
+                    else recovery_threshold,
                 )
 
             # Stable reading: refresh current_status_detail regardless of
@@ -439,11 +463,11 @@ async def apply_manual_update(
         "SELECT id, display_name, current_status, poll_type, status_page_url FROM services WHERE id = ?",
         (service_id,),
     )
-    svc = await cursor.fetchone()
-    if not svc:
+    svc_row = await cursor.fetchone()
+    if not svc_row:
         raise ValueError(f"Service '{service_id}' not found")
 
-    svc = dict(svc)
+    svc = dict(svc_row)
     old_status = svc["current_status"]
 
     async with write_lock:
@@ -468,8 +492,15 @@ async def apply_manual_update(
                     updated_by, reason, client_ip)
                    VALUES (?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?)""",
                 (
-                    service_id, old_status, new_status.value, None, detail, now,
-                    updated_by, reason, client_ip,
+                    service_id,
+                    old_status,
+                    new_status.value,
+                    None,
+                    detail,
+                    now,
+                    updated_by,
+                    reason,
+                    client_ip,
                 ),
             )
             event_id = cursor_ins.lastrowid
@@ -499,7 +530,7 @@ async def apply_manual_update(
 async def upsert_maintenances(
     db: aiosqlite.Connection,
     service_id: str,
-    maintenances: list[dict],
+    maintenances: list[dict[str, Any]],
 ) -> None:
     """Upsert scheduled maintenances from a Statuspage.io response.
 
@@ -535,8 +566,15 @@ async def upsert_maintenances(
                    SET title = ?, description = ?, scheduled_for = ?,
                        scheduled_until = ?, status = ?
                    WHERE service_id = ? AND vendor_maintenance_id = ?""",
-                (title, description, scheduled_for, scheduled_until,
-                 status, service_id, str(vendor_id)),
+                (
+                    title,
+                    description,
+                    scheduled_for,
+                    scheduled_until,
+                    status,
+                    service_id,
+                    str(vendor_id),
+                ),
             )
         else:
             await db.execute(
@@ -544,8 +582,15 @@ async def upsert_maintenances(
                    (service_id, vendor_maintenance_id, title, description,
                     scheduled_for, scheduled_until, status)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (service_id, str(vendor_id), title, description,
-                 scheduled_for, scheduled_until, status),
+                (
+                    service_id,
+                    str(vendor_id),
+                    title,
+                    description,
+                    scheduled_for,
+                    scheduled_until,
+                    status,
+                ),
             )
 
 
