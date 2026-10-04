@@ -17,7 +17,9 @@ class TestExpandEnvVar:
 
     def test_env_var_expanded(self, monkeypatch):
         monkeypatch.setenv("SLACK_WEBHOOK_TEAM", "https://hooks.slack.com/services/T/B/TEAM")
-        assert _expand_env_var("${SLACK_WEBHOOK_TEAM}") == "https://hooks.slack.com/services/T/B/TEAM"
+        assert (
+            _expand_env_var("${SLACK_WEBHOOK_TEAM}") == "https://hooks.slack.com/services/T/B/TEAM"
+        )
 
     def test_unset_env_var_returns_none(self, monkeypatch, caplog):
         monkeypatch.delenv("SLACK_WEBHOOK_MISSING", raising=False)
@@ -71,7 +73,10 @@ class TestSeedServicesChannelOverride:
         assert result == "https://hooks.slack.com/services/T/B/TEAM"
 
     async def test_channel_override_env_var_unset_logs_and_falls_back(
-        self, db, monkeypatch, caplog,
+        self,
+        db,
+        monkeypatch,
+        caplog,
     ):
         monkeypatch.delenv("SLACK_WEBHOOK_MISSING", raising=False)
         with caplog.at_level(logging.WARNING, logger="app.seed"):

@@ -28,7 +28,9 @@ def _no_flap_suppression(monkeypatch):
     monkeypatch.setattr(settings, "alert_min_state_duration_seconds", 0)
 
 
-async def _insert_service(db, service_id="test-svc", status="operational", poll_type="statuspage_json"):
+async def _insert_service(
+    db, service_id="test-svc", status="operational", poll_type="statuspage_json"
+):
     """Helper: insert a test service into the DB."""
     await db.execute(
         """INSERT OR REPLACE INTO services
@@ -89,7 +91,9 @@ class TestDetectChanges:
         assert len(changes) == 0
         assert health_changes == []
 
-        cursor = await db.execute("SELECT last_polled_at, current_status_detail FROM services WHERE id='svc-c'")
+        cursor = await db.execute(
+            "SELECT last_polled_at, current_status_detail FROM services WHERE id='svc-c'"
+        )
         row = dict(await cursor.fetchone())
         assert row["last_polled_at"] is not None
         assert row["current_status_detail"] == "All good"
@@ -175,6 +179,7 @@ class TestFlapSuppressionStateMachine:
 
     NOW_STR = "2026-05-01T00:00:00Z"
     from datetime import datetime, timezone
+
     NOW_DT = datetime.fromisoformat(NOW_STR.replace("Z", "+00:00"))
 
     def test_same_status_clears_pending(self):
@@ -184,8 +189,10 @@ class TestFlapSuppressionStateMachine:
             pending_status="degraded",
             pending_count=2,
             pending_since="2026-05-01T00:00:00Z",
-            now=self.NOW_STR, now_dt=self.NOW_DT,
-            confirm_threshold=3, recovery_threshold=2,
+            now=self.NOW_STR,
+            now_dt=self.NOW_DT,
+            confirm_threshold=3,
+            recovery_threshold=2,
             min_state_duration_seconds=0,
         )
         assert d.new_pending_status is None
@@ -199,8 +206,10 @@ class TestFlapSuppressionStateMachine:
             pending_status=None,
             pending_count=0,
             pending_since=None,
-            now=self.NOW_STR, now_dt=self.NOW_DT,
-            confirm_threshold=3, recovery_threshold=2,
+            now=self.NOW_STR,
+            now_dt=self.NOW_DT,
+            confirm_threshold=3,
+            recovery_threshold=2,
             min_state_duration_seconds=0,
         )
         assert d.new_pending_status == "degraded"
@@ -214,8 +223,10 @@ class TestFlapSuppressionStateMachine:
             pending_status="degraded",
             pending_count=1,
             pending_since=self.NOW_STR,
-            now=self.NOW_STR, now_dt=self.NOW_DT,
-            confirm_threshold=3, recovery_threshold=2,
+            now=self.NOW_STR,
+            now_dt=self.NOW_DT,
+            confirm_threshold=3,
+            recovery_threshold=2,
             min_state_duration_seconds=0,
         )
         assert d.new_pending_count == 2
@@ -226,10 +237,12 @@ class TestFlapSuppressionStateMachine:
             poll_status="degraded",
             current_status="operational",
             pending_status="degraded",
-            pending_count=2,          # +1 this poll = 3
+            pending_count=2,  # +1 this poll = 3
             pending_since=self.NOW_STR,
-            now=self.NOW_STR, now_dt=self.NOW_DT,
-            confirm_threshold=3, recovery_threshold=2,
+            now=self.NOW_STR,
+            now_dt=self.NOW_DT,
+            confirm_threshold=3,
+            recovery_threshold=2,
             min_state_duration_seconds=0,
         )
         assert d.promoted_status == "degraded"
@@ -240,10 +253,12 @@ class TestFlapSuppressionStateMachine:
             poll_status="operational",
             current_status="degraded",
             pending_status="operational",
-            pending_count=1,          # +1 this poll = 2
+            pending_count=1,  # +1 this poll = 2
             pending_since=self.NOW_STR,
-            now=self.NOW_STR, now_dt=self.NOW_DT,
-            confirm_threshold=3, recovery_threshold=2,
+            now=self.NOW_STR,
+            now_dt=self.NOW_DT,
+            confirm_threshold=3,
+            recovery_threshold=2,
             min_state_duration_seconds=600,  # dwell IGNORED for recovery
         )
         assert d.promoted_status == "operational"
@@ -251,17 +266,19 @@ class TestFlapSuppressionStateMachine:
     def test_min_dwell_blocks_promote_for_worsening(self):
         # Count threshold met, but only 30s elapsed vs 600s minimum dwell
         from datetime import timedelta
+
         since = "2026-05-01T00:00:00Z"
         now = self.NOW_DT + timedelta(seconds=30)
         d = _update_pending(
             poll_status="major_outage",
             current_status="operational",
             pending_status="major_outage",
-            pending_count=2,         # +1 = 3, meets count threshold
+            pending_count=2,  # +1 = 3, meets count threshold
             pending_since=since,
             now=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
             now_dt=now,
-            confirm_threshold=3, recovery_threshold=2,
+            confirm_threshold=3,
+            recovery_threshold=2,
             min_state_duration_seconds=600,
         )
         # Dwell not met yet — still pending
@@ -270,6 +287,7 @@ class TestFlapSuppressionStateMachine:
 
     def test_min_dwell_allows_promote_once_elapsed(self):
         from datetime import timedelta
+
         since = "2026-05-01T00:00:00Z"
         now = self.NOW_DT + timedelta(seconds=700)
         d = _update_pending(
@@ -280,7 +298,8 @@ class TestFlapSuppressionStateMachine:
             pending_since=since,
             now=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
             now_dt=now,
-            confirm_threshold=3, recovery_threshold=2,
+            confirm_threshold=3,
+            recovery_threshold=2,
             min_state_duration_seconds=600,
         )
         assert d.promoted_status == "major_outage"
@@ -290,11 +309,13 @@ class TestFlapSuppressionStateMachine:
         d = _update_pending(
             poll_status="major_outage",
             current_status="operational",
-            pending_status="degraded",   # was pending degraded
+            pending_status="degraded",  # was pending degraded
             pending_count=2,
             pending_since=self.NOW_STR,
-            now=self.NOW_STR, now_dt=self.NOW_DT,
-            confirm_threshold=3, recovery_threshold=2,
+            now=self.NOW_STR,
+            now_dt=self.NOW_DT,
+            confirm_threshold=3,
+            recovery_threshold=2,
             min_state_duration_seconds=0,
         )
         assert d.new_pending_status == "major_outage"
@@ -322,8 +343,12 @@ class TestFlapSuppressionIntegration:
         lock = asyncio.Lock()
 
         # One poll showing degraded, then back to operational
-        changes1, _ = await detect_changes(db, lock, [("flap", PollResult(status=ServiceStatus.DEGRADED))])
-        changes2, _ = await detect_changes(db, lock, [("flap", PollResult(status=ServiceStatus.OPERATIONAL))])
+        changes1, _ = await detect_changes(
+            db, lock, [("flap", PollResult(status=ServiceStatus.DEGRADED))]
+        )
+        changes2, _ = await detect_changes(
+            db, lock, [("flap", PollResult(status=ServiceStatus.OPERATIONAL))]
+        )
 
         assert changes1 == []
         assert changes2 == []
@@ -333,7 +358,7 @@ class TestFlapSuppressionIntegration:
         )
         row = dict(await cursor.fetchone())
         assert row["current_status"] == "operational"  # Never flipped
-        assert row["pending_status"] is None           # Cleared on return to stable
+        assert row["pending_status"] is None  # Cleared on return to stable
 
     async def test_three_polls_confirm_status_change(self, db, monkeypatch):
         await self._set_thresholds(monkeypatch, confirm=3, recovery=2, dwell=0)
@@ -341,13 +366,19 @@ class TestFlapSuppressionIntegration:
         lock = asyncio.Lock()
 
         # First poll — pending, no change
-        c1, _ = await detect_changes(db, lock, [("confirm", PollResult(status=ServiceStatus.DEGRADED))])
+        c1, _ = await detect_changes(
+            db, lock, [("confirm", PollResult(status=ServiceStatus.DEGRADED))]
+        )
         assert c1 == []
         # Second poll — still pending
-        c2, _ = await detect_changes(db, lock, [("confirm", PollResult(status=ServiceStatus.DEGRADED))])
+        c2, _ = await detect_changes(
+            db, lock, [("confirm", PollResult(status=ServiceStatus.DEGRADED))]
+        )
         assert c2 == []
         # Third poll — promoted
-        c3, _ = await detect_changes(db, lock, [("confirm", PollResult(status=ServiceStatus.DEGRADED))])
+        c3, _ = await detect_changes(
+            db, lock, [("confirm", PollResult(status=ServiceStatus.DEGRADED))]
+        )
         assert len(c3) == 1
         assert c3[0].new_status == "degraded"
 
@@ -361,7 +392,9 @@ class TestFlapSuppressionIntegration:
         for _ in range(2):
             await detect_changes(db, lock, [("mixed", PollResult(status=ServiceStatus.DEGRADED))])
         for _ in range(2):
-            c, _ = await detect_changes(db, lock, [("mixed", PollResult(status=ServiceStatus.MAJOR_OUTAGE))])
+            c, _ = await detect_changes(
+                db, lock, [("mixed", PollResult(status=ServiceStatus.MAJOR_OUTAGE))]
+            )
 
         # Only 2 consecutive major_outage polls, threshold is 3 → no promote
         assert c == []
@@ -373,8 +406,12 @@ class TestFlapSuppressionIntegration:
         await _insert_service(db, "rec", "degraded")
         lock = asyncio.Lock()
 
-        c1, _ = await detect_changes(db, lock, [("rec", PollResult(status=ServiceStatus.OPERATIONAL))])
-        c2, _ = await detect_changes(db, lock, [("rec", PollResult(status=ServiceStatus.OPERATIONAL))])
+        c1, _ = await detect_changes(
+            db, lock, [("rec", PollResult(status=ServiceStatus.OPERATIONAL))]
+        )
+        c2, _ = await detect_changes(
+            db, lock, [("rec", PollResult(status=ServiceStatus.OPERATIONAL))]
+        )
 
         assert c1 == []
         assert len(c2) == 1
@@ -469,7 +506,9 @@ class TestApplyManualUpdate:
         await _insert_service(db, "manual-svc2", "degraded", "manual")
         lock = asyncio.Lock()
 
-        change = await apply_manual_update(db, lock, "manual-svc2", ServiceStatus.DEGRADED, "Still slow")
+        change = await apply_manual_update(
+            db, lock, "manual-svc2", ServiceStatus.DEGRADED, "Still slow"
+        )
         assert change is None
 
     async def test_manual_update_nonexistent_service(self, db):
@@ -556,19 +595,23 @@ class TestUpsertMaintenances:
     async def test_insert_new_maintenance(self, db):
         await _insert_service(db, "maint-svc", "operational")
 
-        maintenances = [{
-            "id": "maint-001",
-            "name": "Database migration",
-            "scheduled_for": "2026-04-10T02:00:00Z",
-            "scheduled_until": "2026-04-10T04:00:00Z",
-            "status": "scheduled",
-            "incident_updates": [{"body": "Planned DB migration"}],
-        }]
+        maintenances = [
+            {
+                "id": "maint-001",
+                "name": "Database migration",
+                "scheduled_for": "2026-04-10T02:00:00Z",
+                "scheduled_until": "2026-04-10T04:00:00Z",
+                "status": "scheduled",
+                "incident_updates": [{"body": "Planned DB migration"}],
+            }
+        ]
 
         await upsert_maintenances(db, "maint-svc", maintenances)
         await db.commit()
 
-        cursor = await db.execute("SELECT * FROM scheduled_maintenances WHERE service_id='maint-svc'")
+        cursor = await db.execute(
+            "SELECT * FROM scheduled_maintenances WHERE service_id='maint-svc'"
+        )
         rows = await cursor.fetchall()
         assert len(rows) == 1
         row = dict(rows[0])
@@ -579,13 +622,15 @@ class TestUpsertMaintenances:
     async def test_upsert_updates_existing(self, db):
         await _insert_service(db, "maint-svc2", "operational")
 
-        m = [{
-            "id": "maint-002",
-            "name": "API maintenance",
-            "scheduled_for": "2026-04-10T02:00:00Z",
-            "status": "scheduled",
-            "incident_updates": [],
-        }]
+        m = [
+            {
+                "id": "maint-002",
+                "name": "API maintenance",
+                "scheduled_for": "2026-04-10T02:00:00Z",
+                "status": "scheduled",
+                "incident_updates": [],
+            }
+        ]
         await upsert_maintenances(db, "maint-svc2", m)
         await db.commit()
 
@@ -594,10 +639,14 @@ class TestUpsertMaintenances:
         await upsert_maintenances(db, "maint-svc2", m)
         await db.commit()
 
-        cursor = await db.execute("SELECT count(*) FROM scheduled_maintenances WHERE service_id='maint-svc2'")
+        cursor = await db.execute(
+            "SELECT count(*) FROM scheduled_maintenances WHERE service_id='maint-svc2'"
+        )
         assert (await cursor.fetchone())[0] == 1  # Still just one row
 
-        cursor = await db.execute("SELECT status FROM scheduled_maintenances WHERE vendor_maintenance_id='maint-002'")
+        cursor = await db.execute(
+            "SELECT status FROM scheduled_maintenances WHERE vendor_maintenance_id='maint-002'"
+        )
         assert dict(await cursor.fetchone())["status"] == "in_progress"
 
     async def test_skips_maintenance_without_id(self, db):
@@ -605,5 +654,7 @@ class TestUpsertMaintenances:
         await upsert_maintenances(db, "maint-svc3", [{"name": "No ID"}])
         await db.commit()
 
-        cursor = await db.execute("SELECT count(*) FROM scheduled_maintenances WHERE service_id='maint-svc3'")
+        cursor = await db.execute(
+            "SELECT count(*) FROM scheduled_maintenances WHERE service_id='maint-svc3'"
+        )
         assert (await cursor.fetchone())[0] == 0

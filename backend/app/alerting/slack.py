@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.alerting.burn_rate import BurnRateBreach
+    from app.poller.change_detector import PollerHealthChange, StatusChange
 
 import httpx
 
@@ -19,11 +20,13 @@ logger = logging.getLogger(__name__)
 
 RETRY_AFTER_DEFAULT = 2
 
+
 # Imported lazily inside helpers to avoid a circular import at module level.
 # `settings` → nothing in `alerting/`, safe to import here.
 def _ack_enabled() -> bool:
     """Return True when the Slack ack flow is enabled in config."""
     from app.config import settings
+
     return settings.slack_ack_enabled
 
 
@@ -36,6 +39,8 @@ def _build_ack_button(dedup_key: str) -> dict[str, Any]:
         "value": dedup_key,
         "style": "primary",
     }
+
+
 RETRY_AFTER_MAX = 60
 
 
@@ -62,6 +67,7 @@ def _parse_retry_after(raw: str | None) -> int:
         return RETRY_AFTER_DEFAULT
     return min(seconds, RETRY_AFTER_MAX)
 
+
 EMOJI_MAP = {
     "operational": "\u2705",
     "degraded": "\U0001f7e1",
@@ -84,7 +90,7 @@ def build_slack_alert(
     status_page_url: str | None,
     mention: str | None = None,
     dedup_key: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Build a Slack Block Kit payload for a single status change.
 
     `mention` is prepended to the impact section when set (e.g., `<!here>`
@@ -93,11 +99,9 @@ def build_slack_alert(
     emoji = EMOJI_MAP.get(new_status, "\u26ab")
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 
-    impact_body = (
-        f"{mention} {impact_statement}".strip() if mention else impact_statement
-    )
+    impact_body = f"{mention} {impact_statement}".strip() if mention else impact_statement
 
-    blocks = [
+    blocks: list[dict[str, Any]] = [
         {
             "type": "header",
             "text": {
@@ -120,29 +124,37 @@ def build_slack_alert(
     ]
 
     if status_page_url:
-        blocks.append({
-            "type": "actions",
-            "elements": [{
-                "type": "button",
-                "text": {"type": "plain_text", "text": "View Status Page"},
-                "url": status_page_url,
-                "action_id": "view_status_page",
-            }],
-        })
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "View Status Page"},
+                        "url": status_page_url,
+                        "action_id": "view_status_page",
+                    }
+                ],
+            }
+        )
 
     # Append Acknowledge button only when the ack flow is enabled and we have
     # a dedup_key to link the button back to the alert_sent_log row.
     if dedup_key and _ack_enabled():
-        blocks.append({
-            "type": "actions",
-            "elements": [_build_ack_button(dedup_key)],
-        })
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [_build_ack_button(dedup_key)],
+            }
+        )
 
     blocks.append({"type": "divider"})
-    blocks.append({
-        "type": "context",
-        "elements": [{"type": "mrkdwn", "text": f"IT Service Health Dashboard \u2022 {now}"}],
-    })
+    blocks.append(
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"IT Service Health Dashboard \u2022 {now}"}],
+        }
+    )
 
     return {
         "text": f"{emoji} {service_name}: {_format_status(old_status)} \u2192 {_format_status(new_status)}",
@@ -152,7 +164,7 @@ def build_slack_alert(
 
 def build_batch_slack_alert(
     changes: list[tuple[str, str, str, str, str | None]],
-) -> dict:
+) -> dict[str, Any]:
     """Build a single Slack message for multiple status changes.
 
     Args:
@@ -160,7 +172,7 @@ def build_batch_slack_alert(
     """
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 
-    blocks = [
+    blocks: list[dict[str, Any]] = [
         {
             "type": "header",
             "text": {
@@ -180,16 +192,20 @@ def build_batch_slack_alert(
         if status_page_url:
             text += f"\n<{status_page_url}|View Status Page>"
 
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": text},
-        })
+        blocks.append(
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": text},
+            }
+        )
 
     blocks.append({"type": "divider"})
-    blocks.append({
-        "type": "context",
-        "elements": [{"type": "mrkdwn", "text": f"IT Service Health Dashboard \u2022 {now}"}],
-    })
+    blocks.append(
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"IT Service Health Dashboard \u2022 {now}"}],
+        }
+    )
 
     fallback = ", ".join(
         f"{name}: {_format_status(old)} \u2192 {_format_status(new)}"
@@ -203,12 +219,12 @@ def build_batch_slack_alert(
 
 
 def build_aggregated_upstream_alert(
-    upstream_change,                          # StatusChange for the upstream
-    dependents: list,                         # list[StatusChange] for affected downstream
+    upstream_change: "StatusChange",
+    dependents: list["StatusChange"],
     impact_statement: str,
     mention: str | None = None,
     dedup_key: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Render a single Slack message that consolidates an upstream outage
     with all downstream services impacted in the same poll cycle.
 
@@ -219,9 +235,7 @@ def build_aggregated_upstream_alert(
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     dep_names = [d.service_display_name for d in dependents]
 
-    impact_body = (
-        f"{mention} {impact_statement}".strip() if mention else impact_statement
-    )
+    impact_body = f"{mention} {impact_statement}".strip() if mention else impact_statement
 
     header_text = (
         f"{emoji} {upstream_change.service_display_name} "
@@ -229,7 +243,7 @@ def build_aggregated_upstream_alert(
         f"— {len(dep_names)} dependent service(s) affected"
     )
 
-    blocks = [
+    blocks: list[dict[str, Any]] = [
         {
             "type": "header",
             "text": {"type": "plain_text", "text": header_text, "emoji": True},
@@ -252,33 +266,42 @@ def build_aggregated_upstream_alert(
     ]
 
     if upstream_change.status_page_url:
-        blocks.append({
-            "type": "actions",
-            "elements": [{
-                "type": "button",
-                "text": {"type": "plain_text", "text": "View Status Page"},
-                "url": upstream_change.status_page_url,
-                "action_id": "view_upstream_status_page",
-            }],
-        })
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "View Status Page"},
+                        "url": upstream_change.status_page_url,
+                        "action_id": "view_upstream_status_page",
+                    }
+                ],
+            }
+        )
 
     if dedup_key and _ack_enabled():
-        blocks.append({
-            "type": "actions",
-            "elements": [_build_ack_button(dedup_key)],
-        })
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [_build_ack_button(dedup_key)],
+            }
+        )
 
     blocks.append({"type": "divider"})
-    blocks.append({
-        "type": "context",
-        "elements": [{
-            "type": "mrkdwn",
-            "text": (
-                f"IT Service Health Dashboard \u2022 Aggregated upstream alert "
-                f"\u2022 {now}"
-            ),
-        }],
-    })
+    blocks.append(
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": (
+                        f"IT Service Health Dashboard \u2022 Aggregated upstream alert \u2022 {now}"
+                    ),
+                }
+            ],
+        }
+    )
 
     fallback = (
         f"{emoji} {upstream_change.service_display_name}: "
@@ -290,9 +313,9 @@ def build_aggregated_upstream_alert(
 
 
 def build_poller_health_alert(
-    health_change,  # app.poller.change_detector.PollerHealthChange
+    health_change: "PollerHealthChange",
     using_fallback: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Build a Slack Block Kit payload for a poller-health transition.
 
     Tagged with a wrench emoji and a clear "POLLER HEALTH" header so
@@ -320,7 +343,7 @@ def build_poller_health_alert(
         )
         reason = None
 
-    blocks = [
+    blocks: list[dict[str, Any]] = [
         {
             "type": "header",
             "text": {
@@ -336,35 +359,44 @@ def build_poller_health_alert(
     ]
 
     if reason:
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Failure reason:*\n`{reason}`"},
-        })
+        blocks.append(
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*Failure reason:*\n`{reason}`"},
+            }
+        )
 
     if using_fallback:
-        blocks.append({
-            "type": "context",
-            "elements": [{
-                "type": "mrkdwn",
-                "text": (
-                    ":information_source: Routed to the main alerting channel. "
-                    "Set `POLLER_HEALTH_SLACK_WEBHOOK_URL` for a dedicated channel."
-                ),
-            }],
-        })
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": (
+                            ":information_source: Routed to the main alerting channel. "
+                            "Set `POLLER_HEALTH_SLACK_WEBHOOK_URL` for a dedicated channel."
+                        ),
+                    }
+                ],
+            }
+        )
 
     blocks.append({"type": "divider"})
-    blocks.append({
-        "type": "context",
-        "elements": [{
-            "type": "mrkdwn",
-            "text": f"IT Service Health Dashboard \u2022 Poller Health \u2022 {now}",
-        }],
-    })
+    blocks.append(
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"IT Service Health Dashboard \u2022 Poller Health \u2022 {now}",
+                }
+            ],
+        }
+    )
 
     fallback = (
-        f"Poller {'BROKEN' if going_broken else 'RECOVERED'}: "
-        f"{health_change.service_display_name}"
+        f"Poller {'BROKEN' if going_broken else 'RECOVERED'}: {health_change.service_display_name}"
     )
     return {"text": fallback, "blocks": blocks}
 
@@ -400,42 +432,56 @@ def build_slo_burn_rate_alert(
     ]
 
     if channel_mention:
-        blocks.append({
-            "type": "context",
-            "elements": [{"type": "mrkdwn", "text": channel_mention}],
-        })
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": channel_mention}],
+            }
+        )
 
-    blocks.append({
-        "type": "section",
-        "fields": [
-            {"type": "mrkdwn", "text": f"*Severity:*\n{severity_label} burn"},
-            {"type": "mrkdwn", "text": f"*Error budget remaining:*\n{breach.error_budget_remaining_pct:.1f}%"},
-            {"type": "mrkdwn", "text": f"*SLO target:*\n{slo_target}%"},
-            {"type": "mrkdwn", "text": f"*Window:*\n{breach.long_window_label} / {breach.short_window_label}"},
-        ],
-    })
+    blocks.append(
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Severity:*\n{severity_label} burn"},
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Error budget remaining:*\n{breach.error_budget_remaining_pct:.1f}%",
+                },
+                {"type": "mrkdwn", "text": f"*SLO target:*\n{slo_target}%"},
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Window:*\n{breach.long_window_label} / {breach.short_window_label}",
+                },
+            ],
+        }
+    )
 
-    blocks.append({
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": (
-                f"Consuming error budget at *{breach.long_window_burn_rate:.1f}\u00d7* the allowable rate "
-                f"over {breach.long_window_label}, and *{breach.short_window_burn_rate:.1f}\u00d7* over "
-                f"{breach.short_window_label}."
-            ),
-        },
-    })
+    blocks.append(
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"Consuming error budget at *{breach.long_window_burn_rate:.1f}\u00d7* the allowable rate "
+                    f"over {breach.long_window_label}, and *{breach.short_window_burn_rate:.1f}\u00d7* over "
+                    f"{breach.short_window_label}."
+                ),
+            },
+        }
+    )
 
     action_elements: list[dict[str, Any]] = []
 
     if status_page_url:
-        action_elements.append({
-            "type": "button",
-            "text": {"type": "plain_text", "text": "View Status Page"},
-            "url": status_page_url,
-            "action_id": "view_status_page",
-        })
+        action_elements.append(
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": "View Status Page"},
+                "url": status_page_url,
+                "action_id": "view_status_page",
+            }
+        )
 
     if dedup_key and _ack_enabled():
         action_elements.append(_build_ack_button(dedup_key))
@@ -444,10 +490,17 @@ def build_slo_burn_rate_alert(
         blocks.append({"type": "actions", "elements": action_elements})
 
     blocks.append({"type": "divider"})
-    blocks.append({
-        "type": "context",
-        "elements": [{"type": "mrkdwn", "text": f"IT Service Health Dashboard \u2022 SLO Burn Rate \u2022 {now}"}],
-    })
+    blocks.append(
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"IT Service Health Dashboard \u2022 SLO Burn Rate \u2022 {now}",
+                }
+            ],
+        }
+    )
 
     return {
         "text": (
@@ -460,7 +513,7 @@ def build_slo_burn_rate_alert(
 
 async def send_slack_alert(
     webhook_url: str,
-    payload: dict,
+    payload: dict[str, Any],
     client: httpx.AsyncClient | None = None,
 ) -> bool:
     """Send a Slack Block Kit payload to a webhook URL.
@@ -468,7 +521,7 @@ async def send_slack_alert(
     Handles 429 rate limiting with one retry. Never raises — returns bool.
     """
     own_client = client is None
-    if own_client:
+    if client is None:
         client = httpx.AsyncClient(timeout=10.0)
 
     try:

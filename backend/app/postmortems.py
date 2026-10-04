@@ -52,7 +52,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         "status": "draft",
     }
     parts.append("---")
-    parts.append(yaml.safe_dump(frontmatter_data, default_flow_style=False, sort_keys=False).rstrip())
+    parts.append(
+        yaml.safe_dump(frontmatter_data, default_flow_style=False, sort_keys=False).rstrip()
+    )
     parts.append("---")
     parts.append("")
 
@@ -206,7 +208,8 @@ def _build_filename(report: dict[str, Any]) -> str:
     # Deterministic 6-char sha1 for idempotency — used only as a filename
     # collision tag, not a security primitive, so usedforsecurity=False.
     sha = hashlib.sha1(
-        f"{started_at}|{resolved_at}".encode(), usedforsecurity=False,
+        f"{started_at}|{resolved_at}".encode(),
+        usedforsecurity=False,
     ).hexdigest()[:6]
 
     return f"{service_id}-{compact}-{sha}.md"

@@ -9,6 +9,7 @@ import asyncio
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 import httpx
 
@@ -40,12 +41,12 @@ class PollResult:
     status: ServiceStatus
     status_detail: str | None = None
     page_name: str | None = None
-    incidents: list[dict] = field(default_factory=list)
-    scheduled_maintenances: list[dict] = field(default_factory=list)
+    incidents: list[dict[str, Any]] = field(default_factory=list)
+    scheduled_maintenances: list[dict[str, Any]] = field(default_factory=list)
     poll_failure_reason: str | None = None
 
 
-async def fetch_statuspage_json(client: httpx.AsyncClient, url: str) -> dict:
+async def fetch_statuspage_json(client: httpx.AsyncClient, url: str) -> dict[str, Any]:
     """Fetch a Statuspage.io summary.json URL and return parsed JSON.
 
     Uses resilient_fetch under the hood: retries transient errors with
@@ -53,11 +54,11 @@ async def fetch_statuspage_json(client: httpx.AsyncClient, url: str) -> dict:
     Raises on HTTP error, breaker open, or parse failure — caller handles.
     """
     response = await resilient_fetch(client, url)
-    return response.json()
+    return cast(dict[str, Any], response.json())
 
 
 def extract_service_status(
-    data: dict,
+    data: dict[str, Any],
     component_name: str | None = None,
 ) -> PollResult:
     """Extract service status from an already-fetched Statuspage.io JSON response.
@@ -118,7 +119,7 @@ async def poll_statuspage(
 
 async def poll_all_statuspage(
     client: httpx.AsyncClient,
-    services: list[dict],
+    services: list[dict[str, Any]],
 ) -> list[tuple[str, PollResult]]:
     """Batch-poll all statuspage_json services with URL deduplication.
 
@@ -132,14 +133,14 @@ async def poll_all_statuspage(
         List of (service_id, PollResult) tuples.
     """
     # Group services by poll_url for deduplication
-    url_to_services: dict[str, list[dict]] = defaultdict(list)
+    url_to_services: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for svc in services:
         url_to_services[svc["poll_url"]].append(svc)
 
     # Fetch each unique URL concurrently
     urls = list(url_to_services.keys())
 
-    async def _fetch_one(url: str) -> tuple[str, dict | Exception]:
+    async def _fetch_one(url: str) -> tuple[str, dict[str, Any] | Exception]:
         """Fetch with resilience. Returns (url, data|exception)."""
         try:
             data = await fetch_statuspage_json(client, url)

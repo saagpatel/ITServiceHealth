@@ -1,6 +1,7 @@
 """Service API routes: list all services, get service detail with dependencies."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -14,7 +15,7 @@ router = APIRouter(prefix="/api", tags=["services"])
 
 
 @router.get("/services")
-async def list_services(category: str | None = None) -> dict:
+async def list_services(category: str | None = None) -> dict[str, Any]:
     """List all services with current status and aggregate counts."""
     db = await get_db()
 
@@ -58,7 +59,7 @@ async def list_services(category: str | None = None) -> dict:
 
 
 @router.get("/services/uptime")
-async def get_services_uptime() -> dict:
+async def get_services_uptime() -> dict[str, Any]:
     """Get per-service, per-day worst status over the past 7 days."""
     db = await get_db()
 
@@ -100,7 +101,7 @@ async def get_services_uptime() -> dict:
 
 
 @router.get("/services/sla")
-async def get_services_sla() -> dict:
+async def get_services_sla() -> dict[str, Any]:
     """Get per-service uptime percentages for 24h, 7d, and 30d windows."""
     db = await get_db()
     now = datetime.now(UTC)
@@ -131,7 +132,7 @@ async def get_services_sla() -> dict:
 
 
 @router.get("/services/sla/history")
-async def get_sla_history(days: int = 30) -> dict:
+async def get_sla_history(days: int = 30) -> dict[str, Any]:
     """Get daily uptime percentages for each service over N days."""
     db = await get_db()
     days = max(1, min(days, 90))
@@ -150,7 +151,7 @@ async def get_sla_history(days: int = 30) -> dict:
     )
     service_ids = [row[0] for row in await cursor.fetchall()]
 
-    services_data: dict[str, list[dict]] = {}
+    services_data: dict[str, list[dict[str, Any]]] = {}
 
     for sid in service_ids:
         points = []
@@ -174,7 +175,7 @@ async def get_sla_history(days: int = 30) -> dict:
 
 
 @router.get("/services/graph")
-async def get_service_graph() -> dict:
+async def get_service_graph() -> dict[str, Any]:
     """Get service dependency graph in node/link format for visualization."""
     db = await get_db()
 
@@ -213,7 +214,7 @@ async def get_service_graph() -> dict:
 
 
 @router.get("/services/slo")
-async def get_services_slo() -> dict:
+async def get_services_slo() -> dict[str, Any]:
     """Per-service SLO snapshot: error budget remaining + any active burn-rate breaches.
 
     Unlike the scheduled burn-rate cycle which routes Slack alerts, this endpoint
@@ -229,7 +230,7 @@ async def get_services_slo() -> dict:
     )
     rows = await cursor.fetchall()
 
-    services_out: list[dict] = []
+    services_out: list[dict[str, Any]] = []
     for row in rows:
         service_id = row["id"]
         service_name = row["display_name"] or service_id
@@ -243,20 +244,22 @@ async def get_services_slo() -> dict:
 
         budget_remaining = compute_error_budget_remaining(w30d.uptime_percent, target)
 
-        services_out.append({
-            "id": service_id,
-            "display_name": service_name,
-            "category": row["category"],
-            "tier": row["tier"],
-            "current_status": row["current_status"],
-            "poller_health": row["poller_health"],
-            "uptime_30d_pct": w30d.uptime_percent,
-            "error_budget_remaining_pct": round(budget_remaining, 2),
-            "fast_burning": fast_breach is not None,
-            "slow_burning": slow_breach is not None,
-            "fast_breach": _breach_to_dict(fast_breach) if fast_breach else None,
-            "slow_breach": _breach_to_dict(slow_breach) if slow_breach else None,
-        })
+        services_out.append(
+            {
+                "id": service_id,
+                "display_name": service_name,
+                "category": row["category"],
+                "tier": row["tier"],
+                "current_status": row["current_status"],
+                "poller_health": row["poller_health"],
+                "uptime_30d_pct": w30d.uptime_percent,
+                "error_budget_remaining_pct": round(budget_remaining, 2),
+                "fast_burning": fast_breach is not None,
+                "slow_burning": slow_breach is not None,
+                "fast_breach": _breach_to_dict(fast_breach) if fast_breach else None,
+                "slow_breach": _breach_to_dict(slow_breach) if slow_breach else None,
+            }
+        )
 
     return {
         "data": {
@@ -272,7 +275,7 @@ async def get_services_slo() -> dict:
     }
 
 
-def _breach_to_dict(breach: BurnRateBreach) -> dict:
+def _breach_to_dict(breach: BurnRateBreach) -> dict[str, Any]:
     return {
         "long_window_burn_rate": breach.long_window_burn_rate,
         "short_window_burn_rate": breach.short_window_burn_rate,
@@ -282,7 +285,7 @@ def _breach_to_dict(breach: BurnRateBreach) -> dict:
 
 
 @router.get("/services/{service_id}")
-async def get_service_detail(service_id: str) -> dict:
+async def get_service_detail(service_id: str) -> dict[str, Any]:
     """Get a single service with dependencies and recent events."""
     db = await get_db()
 

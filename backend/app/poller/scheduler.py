@@ -16,17 +16,22 @@ Phase 3 observability hooks:
 import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable, Callable, Coroutine
 from datetime import UTC, datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
+import httpx
 import structlog
-from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED, JobExecutionEvent
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from fastapi import FastAPI
 
 from app.config import settings
 from app.database import get_db, get_write_lock
 from app.observability.heartbeat import heartbeat_tick, update_heartbeat_gauge_continuously
 from app.observability.metrics import POLL_CYCLES_TOTAL, POLL_DURATION_SECONDS
+from app.poller.statuspage_poller import PollResult
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +51,7 @@ scheduler = AsyncIOScheduler(
 )
 
 
-def _on_scheduler_event(event) -> None:
+def _on_scheduler_event(event: JobExecutionEvent) -> None:
     """Bridge APScheduler events into our logs + metrics."""
     if event.code == EVENT_JOB_ERROR:
         logger.error(
@@ -62,7 +67,7 @@ def _on_scheduler_event(event) -> None:
         )
 
 
-def start_scheduler(app) -> None:
+def start_scheduler(app: FastAPI) -> None:
     """Start the poll scheduler with immediate first run."""
     scheduler.add_listener(_on_scheduler_event, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
 
@@ -174,7 +179,7 @@ def stop_scheduler() -> None:
         logger.info("Poll scheduler stopped")
 
 
-async def run_poll_cycle(app) -> None:
+async def run_poll_cycle(app: FastAPI) -> None:
     """Execute one full poll cycle across all automated services.
 
     Binds `poll_cycle_id` so every log line emitted during the cycle
@@ -187,7 +192,7 @@ async def run_poll_cycle(app) -> None:
     structlog.contextvars.bind_contextvars(poll_cycle_id=cycle_id)
 
     try:
-        client = app.state.http_client
+        client: httpx.AsyncClient = app.state.http_client
         db = await get_db()
         write_lock = get_write_lock()
 
@@ -198,7 +203,7 @@ async def run_poll_cycle(app) -> None:
                FROM services WHERE poll_type != 'manual'"""
         )
         rows = await cursor.fetchall()
-        services_by_type: dict[str, list[dict]] = {}
+        services_by_type: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             svc = dict(row)
             services_by_type.setdefault(svc["poll_type"], []).append(svc)
@@ -211,13 +216,15 @@ async def run_poll_cycle(app) -> None:
         from app.poller.statuspage_poller import poll_all_statuspage
         from app.poller.trust_incidents_poller import poll_trust_incidents
 
-        tasks = []
+        tasks: list[Coroutine[Any, Any, list[tuple[str, PollResult]]]] = []
         task_labels = []
 
-        def _timed(poll_type: str, coro):
+        def _timed(
+            poll_type: str, coro: Awaitable[list[tuple[str, PollResult]]]
+        ) -> Coroutine[Any, Any, list[tuple[str, PollResult]]]:
             """Wrap a poller coroutine to record its wall-clock duration."""
 
-            async def _runner():
+            async def _runner() -> list[tuple[str, PollResult]]:
                 with POLL_DURATION_SECONDS.labels(poll_type=poll_type).time():
                     return await coro
 
@@ -232,7 +239,7 @@ async def run_poll_cycle(app) -> None:
         if current_status_svcs:
             svc = current_status_svcs[0]
 
-            async def _poll_current_status():
+            async def _poll_current_status() -> list[tuple[str, PollResult]]:
                 result = await poll_current_status(client, svc["poll_url"])
                 return [(svc["id"], result)]
 
@@ -255,7 +262,10 @@ async def run_poll_cycle(app) -> None:
         ]:
             for svc in services_by_type.get(poll_type, []):
 
-                async def _poll_single(s=svc, fn=poller_fn):
+                async def _poll_single(
+                    s: dict[str, Any] = svc,
+                    fn: Callable[[httpx.AsyncClient, str], Awaitable[PollResult]] = poller_fn,
+                ) -> list[tuple[str, PollResult]]:
                     result = await fn(client, s["poll_url"])
                     return [(s["id"], result)]
 
@@ -271,10 +281,12 @@ async def run_poll_cycle(app) -> None:
         gathered = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Flatten results
-        all_results: list[tuple[str, ...]] = []
+        all_results: list[tuple[str, PollResult]] = []
         for i, result in enumerate(gathered):
             if isinstance(result, Exception):
                 logger.error("Poller group '%s' failed: %s", task_labels[i], result)
+            elif isinstance(result, BaseException):
+                raise result
             else:
                 all_results.extend(result)
 

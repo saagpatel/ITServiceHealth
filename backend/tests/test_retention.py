@@ -1,6 +1,5 @@
 """Tests for Phase 4 data lifecycle: pragmas, retention, WAL checkpoint."""
 
-
 import aiosqlite
 import pytest
 
@@ -42,8 +41,12 @@ async def _insert_alert(db, service_id, days_ago, dedup_key=None):
             first_sent_at, last_updated_at)
            VALUES (?, ?, 'important', 'degraded', 'status_change',
                    datetime('now', ?), datetime('now', ?))""",
-        (dedup_key or f"test:{service_id}:{days_ago}", service_id,
-         f"-{days_ago} days", f"-{days_ago} days"),
+        (
+            dedup_key or f"test:{service_id}:{days_ago}",
+            service_id,
+            f"-{days_ago} days",
+            f"-{days_ago} days",
+        ),
     )
 
 
@@ -61,11 +64,11 @@ class TestProductionPragmas:
             return row[0]
 
         assert (await _pragma("journal_mode")) == "wal"
-        assert (await _pragma("synchronous")) == 1   # NORMAL
+        assert (await _pragma("synchronous")) == 1  # NORMAL
         assert (await _pragma("busy_timeout")) == 5000
         assert (await _pragma("cache_size")) == -64000
         assert (await _pragma("mmap_size")) == 268435456
-        assert (await _pragma("temp_store")) == 2    # MEMORY
+        assert (await _pragma("temp_store")) == 2  # MEMORY
         assert (await _pragma("foreign_keys")) == 1  # ON
 
         await conn.close()
@@ -104,9 +107,7 @@ class TestPurgeOldRows:
         )
         assert result.status_events_deleted == 1
 
-        cursor = await db.execute(
-            "SELECT count(*) FROM status_events WHERE service_id='rtn-svc'"
-        )
+        cursor = await db.execute("SELECT count(*) FROM status_events WHERE service_id='rtn-svc'")
         remaining = (await cursor.fetchone())[0]
         assert remaining == 1
 
@@ -154,9 +155,7 @@ class TestPurgeOldRows:
         )
         assert result.alert_sent_log_deleted == 1
 
-        cursor = await db.execute(
-            "SELECT count(*) FROM alert_sent_log WHERE service_id='als'"
-        )
+        cursor = await db.execute("SELECT count(*) FROM alert_sent_log WHERE service_id='als'")
         assert (await cursor.fetchone())[0] == 1
 
     async def test_boundary_is_inclusive_of_exactly_threshold(self, db):
@@ -207,7 +206,10 @@ class TestScheduledTicks:
         await retention.scheduled_retention_tick()
 
     async def test_scheduled_wal_checkpoint_tick_handles_missing_db(
-        self, tmp_path, monkeypatch,
+        self,
+        tmp_path,
+        monkeypatch,
     ):
         from app import retention
+
         await retention.scheduled_wal_checkpoint_tick()  # no raise

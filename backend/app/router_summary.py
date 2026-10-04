@@ -1,5 +1,7 @@
 """Summary and maintenance API routes."""
 
+from typing import Any
+
 from fastapi import APIRouter
 
 from app.alerting.templates import generate_summary_text
@@ -10,7 +12,7 @@ router = APIRouter(prefix="/api", tags=["summary"])
 
 
 @router.get("/summary")
-async def get_summary() -> dict:
+async def get_summary() -> dict[str, Any]:
     """Overall health summary with active incidents and upcoming maintenances."""
     db = await get_db()
 
@@ -72,12 +74,15 @@ async def get_summary() -> dict:
         downstream = await get_downstream(db, svc["id"])
         affected = [d["service_name"] for d in downstream]
 
-        active_incidents.append({
-            "service": svc,
-            "impact_statement": impact or f"{svc['display_name']} status: {svc['current_status']}",
-            "affected_services": affected,
-            "started_at": svc["last_status_change_at"],
-        })
+        active_incidents.append(
+            {
+                "service": svc,
+                "impact_statement": impact
+                or f"{svc['display_name']} status: {svc['current_status']}",
+                "affected_services": affected,
+                "started_at": svc["last_status_change_at"],
+            }
+        )
         incident_names.append(svc["display_name"])
 
     # Status text
@@ -120,7 +125,7 @@ async def get_summary() -> dict:
 
 
 @router.get("/maintenance")
-async def get_maintenance() -> dict:
+async def get_maintenance() -> dict[str, Any]:
     """Get upcoming and active scheduled maintenances."""
     db = await get_db()
 

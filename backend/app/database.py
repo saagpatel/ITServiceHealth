@@ -130,7 +130,9 @@ async def run_migrations(conn: aiosqlite.Connection, migrations_dir: Path | None
         if version <= current_version:
             continue
 
-        logger.info("Applying migration %s (version %d → %d)", sql_file.name, current_version, version)
+        logger.info(
+            "Applying migration %s (version %d → %d)", sql_file.name, current_version, version
+        )
         sql = sql_file.read_text()
         await conn.executescript(sql)
         await conn.execute(f"PRAGMA user_version = {version}")
@@ -161,10 +163,13 @@ async def checkpoint_wal(conn: aiosqlite.Connection | None = None) -> tuple[int,
         raise RuntimeError("Database not initialized")
     cursor = await target.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     row = await cursor.fetchone()
+    assert row is not None, "Expected database result row"
     busy, in_wal, checkpointed = (row[0] or 0), (row[1] or 0), (row[2] or 0)
     logger.info(
         "WAL checkpoint: busy=%d pages_in_wal=%d pages_checkpointed=%d",
-        busy, in_wal, checkpointed,
+        busy,
+        in_wal,
+        checkpointed,
     )
     return busy, in_wal, checkpointed
 

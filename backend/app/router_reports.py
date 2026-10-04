@@ -1,6 +1,7 @@
 """Incident reports API: auto-generated post-incident summaries."""
 
 import json
+from typing import Any
 
 from fastapi import APIRouter
 
@@ -11,7 +12,7 @@ router = APIRouter(prefix="/api", tags=["reports"])
 
 
 @router.get("/reports")
-async def get_reports(service_id: str | None = None, limit: int = 20) -> dict:
+async def get_reports(service_id: str | None = None, limit: int = 20) -> dict[str, Any]:
     """Get incident reports, optionally filtered by service."""
     db = await get_db()
     limit = max(1, min(limit, 100))
@@ -45,7 +46,9 @@ async def get_reports(service_id: str | None = None, limit: int = 20) -> dict:
     for row in rows:
         r = dict(row)
         r["duration_human"] = _format_duration(r["duration_seconds"])
-        r["affected_downstream"] = json.loads(r["affected_downstream"]) if r["affected_downstream"] else []
+        r["affected_downstream"] = (
+            json.loads(r["affected_downstream"]) if r["affected_downstream"] else []
+        )
         reports.append(r)
 
     return {

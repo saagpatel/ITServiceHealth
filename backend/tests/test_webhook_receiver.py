@@ -65,11 +65,14 @@ async def webhook_app(tmp_path, monkeypatch):
 
     monkeypatch.setattr(settings, "webhooks_enabled", True)
     monkeypatch.setattr(
-        settings, "statuspage_webhook_secret", SecretStr(WEBHOOK_SECRET),
+        settings,
+        "statuspage_webhook_secret",
+        SecretStr(WEBHOOK_SECRET),
     )
     monkeypatch.setattr(settings, "slack_webhook_url", None)
 
     from app.main import app
+
     yield app, conn
 
     await close_db()
@@ -147,7 +150,8 @@ async def test_valid_component_update_returns_200_and_writes_event(webhook_clien
     assert row["source"] == "webhook"
 
     cursor = await conn.execute(
-        "SELECT current_status FROM services WHERE id = ?", (SERVICE_ID,),
+        "SELECT current_status FROM services WHERE id = ?",
+        (SERVICE_ID,),
     )
     svc = await cursor.fetchone()
     assert svc["current_status"] == "major_outage"
@@ -179,7 +183,8 @@ async def test_valid_incident_update_returns_200_and_writes_event(webhook_client
     assert resp.status_code == 200
 
     cursor = await conn.execute(
-        "SELECT new_status FROM status_events WHERE service_id = ?", (SERVICE_ID,),
+        "SELECT new_status FROM status_events WHERE service_id = ?",
+        (SERVICE_ID,),
     )
     row = await cursor.fetchone()
     assert row is not None
@@ -215,7 +220,8 @@ async def test_disabled_returns_404(tmp_path, monkeypatch):
     sig = _sign_body(body, WEBHOOK_SECRET)
 
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test",
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as client:
         resp = await client.post(
             f"/api/webhooks/statuspage/{SERVICE_ID}",
@@ -251,7 +257,8 @@ async def test_secret_not_configured_returns_503(tmp_path, monkeypatch):
     sig = _sign_body(body, WEBHOOK_SECRET)
 
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test",
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as client:
         resp = await client.post(
             f"/api/webhooks/statuspage/{SERVICE_ID}",
@@ -327,7 +334,8 @@ async def test_no_status_change_when_same_status(webhook_client):
     assert resp.status_code == 200
 
     cursor = await conn.execute(
-        "SELECT count(*) FROM status_events WHERE service_id = ?", (SERVICE_ID,),
+        "SELECT count(*) FROM status_events WHERE service_id = ?",
+        (SERVICE_ID,),
     )
     count = (await cursor.fetchone())[0]
     assert count == 0

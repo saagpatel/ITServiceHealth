@@ -54,9 +54,14 @@ def _verify_slack_signature(
 ) -> bool:
     """Verify a Slack v0 signature against raw_body + timestamp."""
     base = f"v0:{timestamp}:{raw_body.decode()}"
-    expected = "v0=" + hmac.new(
-        secret.encode(), base.encode(), hashlib.sha256,
-    ).hexdigest()
+    expected = (
+        "v0="
+        + hmac.new(
+            secret.encode(),
+            base.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+    )
     return hmac.compare_digest(expected, presented_sig)
 
 
@@ -149,13 +154,11 @@ async def _post_response_url(
     # Clone blocks and remove any existing ack_alert actions block to avoid
     # duplicate Acknowledge buttons if Slack retries and we re-ack.
     updated_blocks = [
-        b for b in original_blocks
+        b
+        for b in original_blocks
         if not (
             b.get("type") == "actions"
-            and any(
-                e.get("action_id") == "ack_alert"
-                for e in b.get("elements", [])
-            )
+            and any(e.get("action_id") == "ack_alert" for e in b.get("elements", []))
         )
     ]
     updated_blocks.append(ack_block)
@@ -177,7 +180,8 @@ async def _post_response_url(
             if resp.status_code != 200:
                 logger.warning(
                     "Slack response_url returned %d: %s",
-                    resp.status_code, resp.text[:200],
+                    resp.status_code,
+                    resp.text[:200],
                 )
     except Exception:
         logger.exception("Failed to POST to Slack response_url")
@@ -258,7 +262,8 @@ async def slack_interactivity(request: Request) -> dict[str, str]:
     if not updated:
         logger.info(
             "Ack for dedup_key %r from %s: no matching unresolved alert found",
-            dedup_key, username,
+            dedup_key,
+            username,
         )
         # Still return 200 — Slack would retry on non-2xx
         return {}
@@ -267,9 +272,7 @@ async def slack_interactivity(request: Request) -> dict[str, str]:
 
     # Update the Slack message in-place if we have a response_url
     if response_url:
-        original_blocks: list[dict[str, Any]] = (
-            slack_payload.get("message", {}).get("blocks", [])
-        )
+        original_blocks: list[dict[str, Any]] = slack_payload.get("message", {}).get("blocks", [])
         await _post_response_url(response_url, original_blocks, username)
 
     # Return empty body — Slack spec says 200 with empty body or {"ok": true}
@@ -378,12 +381,14 @@ def _build_status_message(service: dict[str, Any]) -> dict[str, Any]:
     ]
 
     if status_page_url:
-        blocks.append({
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": f"<{status_page_url}|View Status Page>"},
-            ],
-        })
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {"type": "mrkdwn", "text": f"<{status_page_url}|View Status Page>"},
+                ],
+            }
+        )
 
     return {
         "response_type": "ephemeral",

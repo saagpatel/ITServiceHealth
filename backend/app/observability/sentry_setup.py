@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from sentry_sdk.types import Event
 
 from app.config import settings
 
@@ -38,9 +41,9 @@ def _scrub(value: Any) -> Any:
     return value
 
 
-def _before_send(event: dict, _hint: dict) -> dict:
+def _before_send(event: Event, _hint: dict[str, Any]) -> Event:
     """Sentry before_send hook. Returns the (possibly scrubbed) event."""
-    return _scrub(event)
+    return cast("Event", _scrub(event))
 
 
 def configure_sentry() -> None:

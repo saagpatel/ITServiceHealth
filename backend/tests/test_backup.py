@@ -38,8 +38,10 @@ class TestRunBackup:
 
     @pytest.mark.asyncio
     async def test_creates_backup_file(self, backup_dir, file_db):
-        with patch("app.backup.get_db", return_value=file_db), \
-             patch("app.backup.settings") as mock_settings:
+        with (
+            patch("app.backup.get_db", return_value=file_db),
+            patch("app.backup.settings") as mock_settings,
+        ):
             mock_settings.backup_dir = str(backup_dir)
             mock_settings.backup_retention_days = 7
             await run_backup()
@@ -50,8 +52,10 @@ class TestRunBackup:
 
     @pytest.mark.asyncio
     async def test_backup_is_valid_sqlite(self, backup_dir, file_db):
-        with patch("app.backup.get_db", return_value=file_db), \
-             patch("app.backup.settings") as mock_settings:
+        with (
+            patch("app.backup.get_db", return_value=file_db),
+            patch("app.backup.settings") as mock_settings,
+        ):
             mock_settings.backup_dir = str(backup_dir)
             mock_settings.backup_retention_days = 7
             await run_backup()
@@ -69,8 +73,10 @@ class TestRunBackup:
         existing = backup_dir / f"pulse-{date.today().isoformat()}.db"
         existing.write_text("dummy")
 
-        with patch("app.backup.get_db", return_value=file_db), \
-             patch("app.backup.settings") as mock_settings:
+        with (
+            patch("app.backup.get_db", return_value=file_db),
+            patch("app.backup.settings") as mock_settings,
+        ):
             mock_settings.backup_dir = str(backup_dir)
             mock_settings.backup_retention_days = 7
             await run_backup()

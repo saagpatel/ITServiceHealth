@@ -1,9 +1,11 @@
 """FastAPI application for IT Service Health Dashboard."""
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 from fastapi import FastAPI, Response
@@ -21,13 +23,14 @@ VERSION = "0.1.0"
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application lifecycle: DB init, HTTP client, shutdown."""
     # Structured logging (JSON to stderr or WatchedFileHandler).
     # When log_file is set, configure_logging returns a QueueListener that
     # offloads file I/O to a dedicated thread so disk writes never block the
     # asyncio event loop.
     from app.logging_config import configure_logging
+
     log_listener = configure_logging(
         level=settings.log_level,
         json_format=settings.log_json,
@@ -38,6 +41,7 @@ async def lifespan(app: FastAPI):
 
     # Sentry (optional — no-op when SENTRY_DSN is unset)
     from app.observability.sentry_setup import configure_sentry
+
     configure_sentry()
 
     # Initialize database and run migrations
@@ -45,6 +49,7 @@ async def lifespan(app: FastAPI):
 
     # Auto-seed services and dependencies (idempotent)
     from app.seed import load_dependencies, load_services, seed_dependencies, seed_services
+
     services = load_services()
     await seed_services(services)
     deps = load_dependencies(known_service_ids={s.id for s in services})
@@ -72,6 +77,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize per-host circuit breakers for the resilience layer
     from app.poller.resilience import configure_breakers
+
     configure_breakers(
         threshold=settings.breaker_threshold,
         ttl_seconds=settings.breaker_ttl_seconds,
@@ -80,13 +86,16 @@ async def lifespan(app: FastAPI):
     # Seed demo data if configured
     if settings.seed_demo_data:
         import sys
+
         sys.path.insert(0, str(Path(__file__).parent.parent.parent))
         from scripts.seed_demo_data import seed_demo_data
+
         db = await get_db()
         await seed_demo_data(db=db)
 
     # Start poll scheduler
     from app.poller.scheduler import start_scheduler, stop_scheduler
+
     start_scheduler(app)
 
     logger.info("IT Service Health Dashboard v%s started", VERSION)
@@ -145,6 +154,7 @@ async def healthz() -> Response:
         get_seconds_since_heartbeat,
         is_heartbeat_fresh,
     )
+
     age = get_seconds_since_heartbeat()
     fresh = is_heartbeat_fresh()
     body = {
@@ -165,7 +175,7 @@ async def metrics() -> Response:
 
 
 @app.get("/api/health")
-async def health() -> dict:
+async def health() -> dict[str, Any]:
     """Rich health check: DB connectivity, poll freshness, service counts."""
     health_status = "healthy"
     db_status = "unknown"
@@ -185,17 +195,20 @@ async def health() -> dict:
         # Service counts
         cursor = await conn.execute("SELECT count(*) FROM services")
         row = await cursor.fetchone()
+        assert row is not None, "Expected database aggregate row"
         services_total = row[0]
 
         cursor = await conn.execute(
             "SELECT count(*) FROM services WHERE last_polled_at IS NOT NULL"
         )
         row = await cursor.fetchone()
+        assert row is not None, "Expected database aggregate row"
         services_polled = row[0]
 
         # Last poll timestamp
         cursor = await conn.execute("SELECT MAX(last_polled_at) FROM services")
         row = await cursor.fetchone()
+        assert row is not None, "Expected database aggregate row"
         if row[0]:
             last_poll_at = row[0]
             try:
@@ -236,7 +249,7 @@ if FRONTEND_DIR.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_ROOT / "assets"), name="static-assets")
 
     @app.get("/sw.js")
-    async def serve_sw():
+    async def serve_sw() -> FileResponse:
         """Serve service worker with no-cache headers for immediate update detection."""
         sw_path = FRONTEND_ROOT / "sw.js"
         if sw_path.is_file():
@@ -248,6 +261,6 @@ if FRONTEND_DIR.exists():
         return FileResponse(FRONTEND_ROOT / "index.html")
 
     @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
+    async def serve_spa(full_path: str) -> FileResponse:
         """SPA catch-all: serve index.html for all non-API routes."""
         return FileResponse(FRONTEND_ROOT / "index.html")
